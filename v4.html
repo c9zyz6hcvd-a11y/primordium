@@ -493,7 +493,7 @@ class World{
     // 覓食（依階級決定能吃什麼）
     let myClass=o.size<0.28?0:o.size<0.55?1:2; // 0=蝦 1=魚 2=鯊魚
     let ed=S,edx=0,edy=0,edT=null;
-    const canEatPlank=myClass<2, canEatWeed=myClass<2;
+    const canEatPlank=myClass<2, canEatWeed=myClass<1;
     if(canEatPlank||canEatWeed){
       for(const f of foodGrid.near(o.x,o.y)){ if(f.dead)continue;
         if(f.kind===PLANK&&!canEatPlank)continue;
