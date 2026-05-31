@@ -415,13 +415,17 @@ class World{
         const m=this.takeDiss(cx,cy,8); if(m>4) this.orgs.push(new Org(FAUNA,clamp(cx,4,W-4),clamp(cy,4,H-4),{size:rnd(0.18,0.05),diet:rnd(0.12,0),mass:m})); } }
     }
     if(mids<22){
-      const gs=this.orgs.filter(o=>o.kind===FAUNA&&o.size<0.28&&o.mass>o.reproMass*0.55).sort((a,b)=>b.mass-a.mass);
-      for(let n=0;n<Math.min(10,gs.length);n++){ const o=gs[n];
-        o.size=rnd(0.5,0.32); o.diet=rnd(0.65,0.4); o.reproMass=reproMassOf(o.size); o.hue=rnd(60,20); o.maxAge=1200+o.size*5000+rnd(600); } }
+      for(let n=0;n<Math.min(8,22-mids);n++){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>20){
+        const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
+        const m=this.takeDiss(cx,cy,12); if(m>6) this.orgs.push(new Org(FAUNA,clamp(cx,4,W-4),clamp(cy,4,H-4),
+          {size:rnd(0.5,0.35),diet:rnd(0.6,0.4),mass:m})); } }
+    }
     if(apex<3){
-      const ms=this.orgs.filter(o=>o.kind===FAUNA&&o.size>=0.28&&o.size<0.6&&o.mass>o.reproMass*0.55).sort((a,b)=>b.mass-a.mass);
-      for(let n=0;n<Math.min(4,ms.length);n++){ const o=ms[n];
-        o.size=rnd(0.8,0.62); o.diet=rnd(0.92,0.75); o.reproMass=reproMassOf(o.size); o.hue=rnd(26,0); o.maxAge=1200+o.size*5000+rnd(600); } }
+      for(let n=0;n<Math.min(3,3-apex);n++){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>20){
+        const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
+        const m=this.takeDiss(cx,cy,20); if(m>10) this.orgs.push(new Org(FAUNA,clamp(cx,4,W-4),clamp(cy,4,H-4),
+          {size:rnd(0.85,0.65),diet:rnd(0.95,0.75),mass:m})); } }
+    }
   }
   diffuse(){ const d=this.diss,c=this.ncols,r=this.nrows,out=new Float32Array(d.length),D=0.12;
     for(let y=0;y<r;y++)for(let x=0;x<c;x++){ const i=y*c+x; let f=0;
