@@ -98,13 +98,19 @@
       <h2>🍽 食物塔</h2>
       <div class="pyr" id="pyr"></div>
       <div class="stat"><span>🌿 海藻</span><b id="s-weed">0</b></div>
-      <div class="stat"><span>🦠 浮游生物</span><b id="s-plank">0</b></div>
-      <div class="stat"><span>🦐 小型（草食）</span><b id="s-small">0</b></div>
-      <div class="stat"><span>🐟 中型（魚）</span><b id="s-mid">0</b></div>
-      <div class="stat"><span>🦈 大型（頂級）</span><b id="s-big">0</b></div>
-      <div class="stat"><span>📅 世代數</span><b id="s-gen">0</b></div>
-      <div class="stat"><span>🐟 平均魚群大小</span><b id="s-school">—</b></div>
-      <div class="stat"><span>🧠 平均適應度</span><b id="s-fitness">—</b></div>
+      <div class="stat"><span>🦠 浮游</span><b id="s-plank">0</b></div>
+      <div class="stat"><span>🦐 蝦</span><b id="s-small">0</b></div>
+      <div class="stat"><span>🐟 魚</span><b id="s-mid">0</b></div>
+      <div class="stat"><span>🦈 鯊魚</span><b id="s-big">0</b></div>
+      <div class="stat"><span>📅 世代</span><b id="s-gen">0</b></div>
+      <div class="stat"><span>🐟 魚群</span><b id="s-school">—</b></div>
+      <div class="stat"><span>🧠 適應度</span><b id="s-fitness">—</b></div>
+    </div>
+    <div class="card">
+      <h2>📊 生物量</h2>
+      <div class="poolbar"><i id="b-weed" style="background:#3fae6a"></i><i id="b-plank" style="background:#7ad0ff"></i><i id="b-small" style="background:#ffd27a"></i><i id="b-mid" style="background:#ff9a5a"></i><i id="b-big" style="background:#ff5a6a"></i></div>
+      <div class="leg"><span><i class="dot" style="background:#3fae6a"></i>海藻</span><span><i class="dot" style="background:#7ad0ff"></i>浮游</span><span><i class="dot" style="background:#ffd27a"></i>蝦</span><span><i class="dot" style="background:#ff9a5a"></i>魚</span><span><i class="dot" style="background:#ff5a6a"></i>鯊魚</span></div>
+      <div class="stat"><span>總生物量</span><b id="s-biototal">0</b></div>
     </div>
 
     <div class="card">
@@ -326,11 +332,11 @@ class World{
     for(let i=0;i<45;i++)  this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.5,0.3),diet:rnd(0.6,0.35)}));
     for(let i=0;i<7;i++)   this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.85,0.62),diet:rnd(0.95,0.7)}));
     this.history=[]; this._histTick=0;
-    // 珊瑚礁容量（地形細胞為單位）
+    // 珊瑚礁：初始極稀少，緩慢生長
     this.reefCapacity=new Float32Array(this.ncols*this.nrows);
     for(let y=0;y<this.nrows;y++)for(let x=0;x<this.ncols;x++){
       const dep=depthAt(this.terrain,x*this.ncs,y*this.ncs);
-      if(dep>0.3&&dep<0.55) this.reefCapacity[y*this.ncols+x]=3+rnd(3);
+      if(dep>0.3&&dep<0.55&&Math.random()<0.08) this.reefCapacity[y*this.ncols+x]=1+rnd(1);
     }
   }
   nIdx(x,y){const c=clamp((x/this.ncs)|0,0,this.ncols-1),r=clamp((y/this.ncs)|0,0,this.nrows-1);return r*this.ncols+c;}
@@ -349,7 +355,7 @@ class World{
     // 歷史記錄
     if(this.tick-this._histTick>=90){
       this._histTick=this.tick; const t=this.totals();
-      this.history.push([this.tick, t.weed, t.plank, t.small, t.mid, t.big, t.avgFitness]);
+      this.history.push([this.tick, t.weed, t.plank, t.small, t.mid, t.big, t.avgFitness, t.bioW, t.bioP, t.bioS, t.bioM, t.bioB]);
       if(this.history.length>600) this.history=this.history.slice(-600);
     }
     this.grid.clear(); const foodGrid=new Grid(70), weedGrid=new Grid(70), animGrid=new Grid(90);
@@ -373,6 +379,12 @@ class World{
       if(o.dead){ if(o.y<H*0.6) this.addSnow(o.x,o.y,o.mass*0.3); this.addDetritus(o.x,o.y,o.mass); }
       else alive.push(o); }
     this.orgs=alive.concat(nb);
+    // 珊瑚礁緩慢生長（每 50 tick 一小部分擴張）
+    if(this.tick%50===0){ const i=(Math.random()*this.reefCapacity.length)|0;
+      if(this.reefCapacity[i]>0&&this.reefCapacity[i]<10){ const x=i%this.ncols,y=(i/this.ncols)|0;
+        const dep=depthAt(this.terrain,x*this.ncs,y*this.ncs);
+        if(dep>0.3&&dep<0.55&&Math.random()<0.2) this.reefCapacity[i]+=0.5; }
+    }
     // 雪花
     for(let i=snowflakes.length-1;i>=0;i--){ const s=snowflakes[i]; s.step();
       if(s.y>H-10||s.mass<0.01){ this.addDiss(s.x,clamp(s.y,H-10,H-5),s.mass*1.5); snowflakes.splice(i,1); } }
@@ -577,15 +589,16 @@ class World{
       this.gen=Math.max(this.gen,o.gen+1); }
   }
   totals(){ let bio=0,det=0,diss=0,weed=0,plank=0,small=0,mid=0,big=0,sc=0,scn=0,
-      fitSum=0,fitN=0;
+      fitSum=0,fitN=0,bioW=0,bioP=0,bioS=0,bioM=0,bioB=0;
     for(const o of this.orgs){ bio+=o.mass;
-      if(o.kind===WEED)weed++; else if(o.kind===PLANK)plank++;
-      else { if(o.size<0.28)small++; else if(o.size<0.55)mid++; else big++;
+      if(o.kind===WEED){weed++;bioW+=o.mass;} else if(o.kind===PLANK){plank++;bioP+=o.mass;}
+      else { if(o.size<0.28){small++;bioS+=o.mass;} else if(o.size<0.55){mid++;bioM+=o.mass;} else {big++;bioB+=o.mass;}
         if(o.school>0.3&&o.size>0.2&&o.size<0.6){sc+=o.school;scn++;}
         fitSum+=o.fitness; fitN++; } }
     for(const d of this.detritus) det+=d.m; for(let i=0;i<this.diss.length;i++) diss+=this.diss[i];
     const avgFit=fitN>0?fitSum/fitN:0;
-    return {bio,det,diss,weed,plank,small,mid,big,total:bio+det+diss,avgSchool:scn>0?sc/scn:0,avgFitness:avgFit}; }
+    return {bio,det,diss,weed,plank,small,mid,big,total:bio+det+diss,avgSchool:scn>0?sc/scn:0,avgFitness:avgFit,
+      bioW,bioP,bioS,bioM,bioB}; }
 
   // ── 存檔/讀檔 ──
   toSaveData(){
@@ -687,11 +700,11 @@ function draw(){
     ctx.fillStyle='rgba(200,215,230,1)'; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,TAU); ctx.fill();
   }
   ctx.globalAlpha=1;
-  // === 珊瑚礁視覺化 ===
+  // === 珊瑚礁視覺化（顯眼橘色） ===
   const cs2=world.ncs;
   for(let r=Math.max(0,(vy0/cs2)|0);r<=Math.min(world.nrows-1,(vy1/cs2)|0);r++)for(let c=Math.max(0,(vx0/cs2)|0);c<=Math.min(world.ncols-1,(vx1/cs2)|0);c++){
     const cap=world.reefCapacity[r*world.ncols+c];
-    if(cap>0){ ctx.fillStyle=`rgba(230,140,100,${0.08+cap*0.02})`; ctx.fillRect(c*cs2,r*cs2,cs2,cs2); }
+    if(cap>0){ ctx.fillStyle=`rgba(230,120,70,${0.2+cap*0.06})`; ctx.fillRect(c*cs2,r*cs2,cs2,cs2); }
   }
   // === 營養水色（與 v3 一致） ===
   const cs=world.ncs, c0=Math.max(0,(vx0/cs)|0),c1=Math.min(world.ncols-1,(vx1/cs)|0),r0=Math.max(0,(vy0/cs)|0),r1=Math.min(world.nrows-1,(vy1/cs)|0);
@@ -822,15 +835,16 @@ function drawPollenChart(){
   const w=pollencv.width/DPR, h=pollencv.height/DPR; pctx.clearRect(0,0,w,h);
   const hist=world.history; if(hist.length<2){ pctx.fillStyle='#56708a'; pctx.font='10px ui-monospace'; pctx.fillText('等待數據…',8,16); return; }
   const padL=32,padR=8,padT=16,padB=14, gw=w-padL-padR, gh=h-padT-padB;
-  let maxV=1; for(const hh of hist) for(let j=3;j<=5;j++) if(hh[j]>maxV) maxV=hh[j];
-  maxV=Math.ceil(maxV/10)*10+10;
-  const colors=['','','','#ffd27a','#ff9a5a','#ff5a6a','#5cf2c4'], labels=['','','','草食','中魚','頂級','適應度'];
+  let maxV=1; for(const hh of hist) for(let j=7;j<=11;j++) if(hh[j]>maxV) maxV=hh[j];
+  maxV=Math.ceil(maxV/100)*100+100;
+  const colors=['','','','','','','','#3fae6a','#7ad0ff','#ffd27a','#ff9a5a','#ff5a6a'];
+  const labels=['','','','','','','','海藻','浮游','蝦','魚','鯊魚'];
   pctx.strokeStyle='rgba(255,255,255,.06)'; pctx.lineWidth=0.5;
   for(let i=0;i<=4;i++){ const y=padT+gh*(1-i/4); pctx.beginPath(); pctx.moveTo(padL,y); pctx.lineTo(w-padR,y); pctx.stroke(); }
   pctx.fillStyle='#3a4a5a'; pctx.font='9px ui-monospace'; pctx.textAlign='right';
   for(let i=0;i<=4;i++){ const y=padT+gh*(1-i/4); pctx.fillText(Math.round(maxV*i/4),padL-4,y+3); }
   pctx.textAlign='center'; pctx.fillText('←  時間  →',padL+gw/2,h-2);
-  for(let j=3;j<=5;j++){
+  for(let j=7;j<=11;j++){
     const pts=hist.map((hh,i)=>{const x=padL+(i/(hist.length-1))*gw;const y=padT+gh*(1-hh[j]/maxV);return [x,y];});
     pctx.strokeStyle=colors[j]; pctx.lineWidth=1.5; pctx.beginPath(); pts.forEach(([x,y],i)=>i?pctx.lineTo(x,y):pctx.moveTo(x,y)); pctx.stroke();
   }
@@ -843,9 +857,7 @@ function drawPollenChart(){
     pctx.setLineDash([]);
   }
   pctx.font='9px ui-monospace'; pctx.textAlign='left';
-  for(let j=3;j<=5;j++){ const lx=padL+10+(j-3)*48; pctx.fillStyle=colors[j]; pctx.fillRect(lx,3,10,8); pctx.fillStyle='#8aa0b8'; pctx.fillText(labels[j],lx+13,11); }
-  pctx.setLineDash([3,3]); pctx.strokeStyle='#5cf2c4'; pctx.lineWidth=1.2; pctx.beginPath(); pctx.moveTo(padL+10+144,7); pctx.lineTo(padL+10+144+10,7); pctx.stroke(); pctx.setLineDash([]);
-  pctx.fillStyle='#8aa0b8'; pctx.fillText('適應度',padL+10+144+13,11);
+  for(let j=7;j<=11;j++){ const lx=padL+10+(j-7)*40; pctx.fillStyle=colors[j]; pctx.fillRect(lx,3,10,8); pctx.fillStyle='#8aa0b8'; pctx.fillText(labels[j],lx+13,11); }
 }
 let chartOpen=false;
 
@@ -858,7 +870,14 @@ function updateHUD(){ const T=world.totals();
   $('s-fitness').textContent=T.avgFitness?T.avgFitness.toFixed(1):'—';
   const tot=T.total||1; $('p-diss').style.width=(T.diss/tot*100)+'%'; $('p-bio').style.width=(T.bio/tot*100)+'%'; $('p-det').style.width=(T.det/tot*100)+'%';
   $('s-total').textContent=Math.round(T.total).toLocaleString();
-  const rows=[[T.plank,'#7ad0ff'],[T.small,'#ffd27a'],[T.mid,'#ff9a5a'],[T.big,'#ff5a6a']];
+  const bioTot=T.bio||1;
+  $('b-weed').style.width=(T.bioW/bioTot*100)+'%';
+  $('b-plank').style.width=(T.bioP/bioTot*100)+'%';
+  $('b-small').style.width=(T.bioS/bioTot*100)+'%';
+  $('b-mid').style.width=(T.bioM/bioTot*100)+'%';
+  $('b-big').style.width=(T.bioB/bioTot*100)+'%';
+  $('s-biototal').textContent=Math.round(T.bio).toLocaleString();
+  const rows=[[T.weed,'#3fae6a'],[T.plank,'#7ad0ff'],[T.small,'#ffd27a'],[T.mid,'#ff9a5a'],[T.big,'#ff5a6a']];
   const mx=Math.max(1,...rows.map(r=>r[0]));
   $('pyr').innerHTML=rows.map(([v,c])=>`<div style="width:${Math.max(5,Math.pow(v/mx,0.5)*100)}%;background:${c}">${v}</div>`).reverse().join('');
   const frac=(world.tick%world.dayLen)/world.dayLen, hh=((frac*24)|0), mm=(((frac*24)%1)*60|0), sun=world.sun();
