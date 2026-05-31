@@ -15,7 +15,8 @@
     font:13px/1.45 ui-monospace,"SF Mono",Menlo,Consolas,monospace;overflow:hidden}
   #wrap{display:flex;height:100%}
   #stage{position:relative;flex:1;min-width:0}
-  canvas{display:block;width:100%;height:100%}
+  canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+  canvas:active{cursor:grabbing}
   #side{width:312px;background:linear-gradient(180deg,#0d131c,#0a0f17);
     border-left:1px solid var(--line);padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
   h1{font-size:15px;letter-spacing:.18em;margin:0;color:var(--accent);text-transform:uppercase}
@@ -792,9 +793,54 @@ cv.addEventListener('wheel',e=>{
   e.preventDefault();
   const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
   const before=screenToWorld(mx,my);
-  cam.zoom=clamp(cam.zoom*(e.deltaY<0?1.12:0.893), cam.min, cam.max);
+  // smooth, continuous zoom; trackpad pinch arrives as ctrl+wheel
+  const f=Math.exp(-e.deltaY*(e.ctrlKey?0.012:0.0018));
+  cam.zoom=clamp(cam.zoom*f, cam.min, cam.max);
   const after=screenToWorld(mx,my);
   cam.x+=before.x-after.x; cam.y+=before.y-after.y; clampCam();   // zoom toward cursor
+},{passive:false});
+
+// ── Touch: 1 finger pan / tap-select, 2 fingers smooth pinch-zoom ──────────────
+let pinch=null;
+const touchXY=t=>{const r=cv.getBoundingClientRect();return {x:t.clientX-r.left,y:t.clientY-r.top};};
+cv.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){
+    const p=touchXY(e.touches[0]);
+    drag={mm:inMinimap(p.x,p.y), sx:p.x, sy:p.y, cx:cam.x, cy:cam.y, moved:0, t:performance.now()};
+    if(drag.mm){const w=mmTo(p.x,p.y); cam.x=w.x; cam.y=w.y; clampCam();}
+  }else if(e.touches.length>=2){
+    drag=null;
+    const a=touchXY(e.touches[0]), b=touchXY(e.touches[1]);
+    pinch={dist:Math.hypot(a.x-b.x,a.y-b.y), mx:(a.x+b.x)/2, my:(a.y+b.y)/2};
+  }
+},{passive:false});
+cv.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length>=2 && pinch){
+    const a=touchXY(e.touches[0]), b=touchXY(e.touches[1]);
+    const mx=(a.x+b.x)/2, my=(a.y+b.y)/2, dist=Math.hypot(a.x-b.x,a.y-b.y)||1;
+    const before=screenToWorld(mx,my);
+    cam.zoom=clamp(cam.zoom*(dist/pinch.dist), cam.min, cam.max);   // smooth pinch scale
+    const after=screenToWorld(mx,my);
+    cam.x+=before.x-after.x; cam.y+=before.y-after.y;               // keep pinch centre fixed
+    cam.x-=(mx-pinch.mx)/cam.zoom; cam.y-=(my-pinch.my)/cam.zoom;   // two-finger pan
+    clampCam();
+    pinch.dist=dist; pinch.mx=mx; pinch.my=my;
+  }else if(e.touches.length===1 && drag){
+    const p=touchXY(e.touches[0]);
+    if(drag.mm){const w=mmTo(p.x,p.y); cam.x=w.x; cam.y=w.y; clampCam(); return;}
+    const dx=p.x-drag.sx, dy=p.y-drag.sy;
+    drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));
+    cam.x=drag.cx-dx/cam.zoom; cam.y=drag.cy-dy/cam.zoom; clampCam();
+  }
+},{passive:false});
+cv.addEventListener('touchend',e=>{
+  if(drag && !drag.mm && drag.moved<6 && performance.now()-drag.t<300){
+    const p=screenToWorld(drag.sx,drag.sy);                         // tap = select
+    selected=pickAt(p.x,p.y); $('inspect').innerHTML=inspectHTML(selected);
+  }
+  if(e.touches.length<2) pinch=null;
+  if(e.touches.length===0) drag=null;
 },{passive:false});
 $('k-food').addEventListener('input',e=>world.foodRate=e.target.value/100);
 $('k-mut').addEventListener('input',e=>world.mutationRate=e.target.value/100);
