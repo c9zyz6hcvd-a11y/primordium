@@ -68,9 +68,6 @@
   footer{color:#43566b;font-size:10px;margin-top:auto;line-height:1.5}
   .badge{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-radius:20px;color:var(--gold);font-size:10px}
   .mini-btn{padding:3px 6px;font-size:11px}
-  .tab-row{display:flex;gap:2px;margin-bottom:6px}
-  .tab-row button{font-size:10px;padding:4px 8px;border-bottom-width:2px;border-radius:7px 7px 0 0}
-  .tab-row button.active{border-color:var(--accent);color:var(--accent);background:rgba(92,242,196,.06);border-bottom-color:var(--accent)}
   @media(max-width:780px){#side{width:260px;padding:8px}}
   @media(max-width:660px){#side{display:none}#stage{width:100%}}
 </style>
@@ -159,14 +156,6 @@
 "use strict";
 /* ════════════════════════════════════════════════════════════════════════
    深淵之海 ABYSSAL v4 — 完整海洋生態系模擬
-   新增 v4 功能：
-   - 繁體中文 UI
-   - 海底地形系統（深度、海脊、海溝）
-   - 洋流系統（推動生物移動）
-   - 魚群行為（boids 類演算法）
-   - 保存/讀取（localStorage）
-   - 種群趨勢圖表（時間序列）
-   - 海洋雪花（上層有機物沉降）
    ════════════════════════════════════════════════════════════════════════ */
 const cv=document.getElementById('c'), ctx=cv.getContext('2d');
 let DPR=Math.min(2,window.devicePixelRatio||1);
@@ -183,7 +172,7 @@ const TAU=Math.PI*2;
 const hueDist=(a,b)=>{let d=Math.abs(a-b)%360;return d>180?360-d:d;};
 window.addEventListener('resize',resize); resize();
 
-// ── 工具函式 ──────────────────────────────────────────────────────────
+// ── Toast ──
 const toastQueue=[];
 function showToast(msg, dur=2200){
   const el=document.getElementById('msg-toast'); if(!el)return;
@@ -193,8 +182,8 @@ function showToast(msg, dur=2200){
   show();
 }
 
-// ── 神經網路（reflex 控制器） ──────────────────────────────────────────
-const N_IN=8, N_HID=8, N_OUT=3;  // 增加一個輸入：鄰近同伴數量
+// ── 神經網路 ──
+const N_IN=8, N_HID=8, N_OUT=3;
 const N_W=N_IN*N_HID+N_HID+N_HID*N_OUT+N_OUT;
 function randBrain(){const w=new Float32Array(N_W);for(let i=0;i<N_W;i++)w[i]=rnd(1,-1);return w;}
 function think(w,inp,hid,out){let k=0;
@@ -209,23 +198,18 @@ class Grid{constructor(cell){this.cs=cell;this.m=new Map();}clear(){this.m.clear
 
 const WEED=0, PLANK=1, FAUNA=2;
 let NEXT_LINE=1;
-
 const reproMassOf=size=> lerp(32, 360, size*size);
 
-// ── 海底地形系統 ──────────────────────────────────────────────────────────
-// 使用多層 Perlin-like 噪聲產生海底地形
-function makeTerrain(w, h, scale){
+// ── 海底地形 ──
+function makeTerrain(w,h,scale){
   const ncols=Math.ceil(w/scale), nrows=Math.ceil(h/scale);
   const raw=new Float32Array(ncols*nrows);
-  // 兩層 octave
   for(let y=0;y<nrows;y++)for(let x=0;x<ncols;x++){
     let v=0, amp=1, freq=1, maxAmp=0;
     for(let o=0;o<3;o++){
       const sx=x*freq/8+0.3, sy=y*freq/8+1.7;
-      const n=Math.sin(sx*2.3+sy*1.7)*Math.cos(sy*2.1-sx*0.9)*amp;
-      v+=n; maxAmp+=amp; amp*=0.5; freq*=2;
+      v+=Math.sin(sx*2.3+sy*1.7)*Math.cos(sy*2.1-sx*0.9)*amp; maxAmp+=amp; amp*=0.5; freq*=2;
     }
-    // 加入大型特徵：海底山脊與海溝
     const dx=x/ncols-0.5, dy=y/nrows-0.5;
     const ridge=Math.sin(dx*6)*0.3+Math.sin((dx+dy)*4)*0.2;
     const trench=-0.4*Math.exp(-((dx-0.3)**2+(dy+0.2)**2)*12);
@@ -236,52 +220,44 @@ function makeTerrain(w, h, scale){
   return {data:raw, ncols, nrows, scale};
 }
 function depthAt(terrain, x, y){
-  const {data,ncols,scale}=terrain;
+  const {data,ncols,nrows,scale}=terrain;
   const cx=(x/scale)|0, cy=(y/scale)|0;
-  if(cx<0||cx>=ncols||cy<0||cy>=nrows) return 0;
+  if(cx<0||cx>=ncols||cy<0||cy>=nrows) return 0.5;
   return data[cy*ncols+cx];
 }
 
-// ── 洋流系統 ────────────────────────────────────────────────────────────
-// 簡化版洋流：大尺度環流 + 隨機渦流
-function makeCurrentField(w, h, scale){
+// ── 洋流 ──
+function makeCurrentField(w,h,scale){
   const ncols=Math.ceil(w/scale), nrows=Math.ceil(h/scale);
-  const u=new Float32Array(ncols*nrows);
-  const v=new Float32Array(ncols*nrows);
-  const t=Math.random()*100; // seed
+  const u=new Float32Array(ncols*nrows), v=new Float32Array(ncols*nrows);
+  const seed=Math.random()*100;
   for(let y=0;y<nrows;y++)for(let x=0;x<ncols;x++){
     const fx=x/ncols, fy=y/nrows;
-    // 大尺度環流（兩個渦旋）
-    u[y*ncols+x]= Math.sin(fx*TAU*1.3+t)*0.6 + Math.sin((fx+fy)*TAU*0.8+t*0.7)*0.4;
-    v[y*ncols+x]= Math.cos(fy*TAU*1.3+t*0.5)*0.6 + Math.cos((fx-fy)*TAU*0.7+t*0.9)*0.4;
+    u[y*ncols+x]= Math.sin(fx*TAU*1.3+seed)*0.6 + Math.sin((fx+fy)*TAU*0.8+seed*0.7)*0.4;
+    v[y*ncols+x]= Math.cos(fy*TAU*1.3+seed*0.5)*0.6 + Math.cos((fx-fy)*TAU*0.7+seed*0.9)*0.4;
   }
   return {u,v,ncols,nrows,scale};
 }
 function currentAt(cur, x, y){
-  const {u,v,ncols,scale}=cur;
+  const {u,v,ncols,nrows,scale}=cur;
   const cx=((x/scale)|0)%ncols, cy=((y/scale)|0)%nrows;
-  const idx=cy*ncols+cx;
-  return {x:u[idx],y:v[idx]};
+  return {x:u[cy*ncols+cx],y:v[cy*ncols+cx]};
 }
 
-// ── 海洋雪花粒子 ──────────────────────────────────────────────────────────
-// 上層死亡有機物向下沉降
+// ── 海洋雪花 ──
 const MAX_SNOW=600;
 class Snowflake{
   constructor(x,y,mass){
-    this.x=x; this.y=y;
-    this.mass=rnd(0.8,0.2)*mass;
-    this.speed=rnd(0.6,0.2);
-    this.drift=rnd(0.5,-0.5);
-    this.size=1+this.mass*2;
-    this.phase=rnd(TAU);
+    this.x=x; this.y=y; this.mass=rnd(0.8,0.2)*mass;
+    this.speed=rnd(0.6,0.2); this.drift=rnd(0.5,-0.5);
+    this.size=1+this.mass*2; this.phase=rnd(TAU);
   }
   step(){ this.y+=this.speed; this.x+=Math.sin(this.phase+this.y*0.01)*this.drift;
     this.mass*=0.997; this.size=Math.max(0.4,this.size*0.997); }
 }
 let snowflakes=[];
 
-// ── 生物個體 ────────────────────────────────────────────────────────────
+// ── 生物 ──
 class Org{
   constructor(kind,x,y,opt={}){
     this.kind=kind; this.x=x; this.y=y; this.dead=false; this.age=0;
@@ -293,29 +269,25 @@ class Org{
     } else if(kind===PLANK){
       this.hue=opt.hue??rnd(170,120); this.mass=opt.mass??rnd(5,3);
       this.drift=rnd(0.25,0.08); this.dphase=rnd(TAU);
-    } else { // FAUNA 連續身體藍圖
+    } else { // FAUNA
       this.size=opt.size??rnd(0.25,0.05);
       this.diet=opt.diet??rnd(0.2,0);
       this.speed=opt.speed??rnd(0.6,0.3);
       this.sense=opt.sense??rnd(0.6,0.3);
-      this.school=opt.school??rnd(0.7,0.1);  // 群游傾向（v4 新增）
+      this.school=opt.school??rnd(0.7,0.1);
       this.hue=opt.hue ?? (this.diet>0.5?rnd(30,0):rnd(150,70));
       this.reproMass=reproMassOf(this.size);
       this.mass=opt.mass ?? this.reproMass*0.5;
       this.maxAge=opt.maxAge ?? (1200+this.size*5000+rnd(600));
       this.brain=opt.brain||randBrain();
       this.steerBias=0; this._h=new Float32Array(N_HID); this._o=new Float32Array(N_OUT); this._i=new Float32Array(N_IN);
-      // 魚群狀態
-      this._schoolFriends=null;
     }
   }
   get r(){ if(this.kind===WEED) return 3+this.mass*0.16; if(this.kind===PLANK) return 1.6+this.mass*0.25;
     return 3+this.size*18+clamp(this.mass/this.reproMass,0,1)*4; }
-  // 該生物當前的深度百分位（0=表面，1=海底）
-  depth(y){ const d=depthAt(world.terrain,this.x,y||this.y); return d; }
 }
 
-// ── 世界 ────────────────────────────────────────────────────────────────
+// ── 世界 ──
 class World{
   constructor(){this.reset();}
   reset(){
@@ -325,51 +297,39 @@ class World{
     this.ncs=70; this.ncols=Math.ceil(W/this.ncs)+1; this.nrows=Math.ceil(H/this.ncs)+1;
     this.diss=new Float32Array(this.ncols*this.nrows);
     for(let i=0;i<this.diss.length;i++) this.diss[i]=46+rnd(8);
-    // ── 生成地形與洋流 ──
+    // 地形 + 洋流
     this.terrain=makeTerrain(W,H,40);
     this.currentField=makeCurrentField(W,H,60);
-    // ── 地形影響營養分布：淺處營養多，深處營養少 ──
+    // 地形影響營養
     for(let y=0;y<this.nrows;y++)for(let x=0;x<this.ncols;x++){
-      const wx=x*this.ncs, wy=y*this.ncs;
-      const dep=depthAt(this.terrain,wx,wy);
-      // 淺處（dep<0.4）營養濃度高，深處低
-      const factor=1.2-dep*0.7;
-      this.diss[y*this.ncols+x]*=factor;
+      const dep=depthAt(this.terrain,x*this.ncs,y*this.ncs);
+      this.diss[y*this.ncols+x]*=(1.2-dep*0.7);
     }
-    // ── 初始化生物 ──
+    // 生物種子
     for(let b=0;b<24;b++){ const cx=rnd(W*0.9,W*0.1),cy=rnd(H*0.9,H*0.1),n=6+((Math.random()*7)|0);
       for(let k=0;k<n;k++) this.orgs.push(new Org(WEED,cx+rnd(90,-90),cy+rnd(90,-90))); }
     for(let i=0;i<1400;i++) this.orgs.push(new Org(PLANK,rnd(W),rnd(H)));
     for(let i=0;i<460;i++) this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.22,0.05),diet:rnd(0.18,0)}));
     for(let i=0;i<45;i++)  this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.5,0.3),diet:rnd(0.6,0.35)}));
     for(let i=0;i<7;i++)   this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.85,0.62),diet:rnd(0.95,0.7)}));
-    // ── 種群趨勢資料 ──
-    this.history=[];         // 每90 tick 記錄一次 [tick, weed, plank, small, mid, big]
-    this._histTick=0;
-    // ── 用於 fish school 的暫存 ──
-    this._schoolGrid=null;
+    this.history=[]; this._histTick=0;
   }
-
   nIdx(x,y){const c=clamp((x/this.ncs)|0,0,this.ncols-1),r=clamp((y/this.ncs)|0,0,this.nrows-1);return r*this.ncols+c;}
   sun(){const t=(this.tick%this.dayLen)/this.dayLen;return clamp(0.12+0.95*(Math.max(0,Math.sin(t*TAU-Math.PI/2))*0.5+0.5),0,1);}
   addDiss(x,y,m){const i=this.nIdx(x,y);if(i>=0&&i<this.diss.length)this.diss[i]+=m;}
   takeDiss(x,y,want){const i=this.nIdx(x,y);if(i<0||i>=this.diss.length)return 0;const g=Math.min(want,this.diss[i]);this.diss[i]-=g;return g;}
   addDetritus(x,y,m){if(m<=0)return;this.detritus.push({x,y,m,vx:rnd(4,-4),vy:rnd(6,2)});
     if(this.detritus.length>1800){const e=this.detritus.shift();this.addDiss(e.x,e.y,e.m);}}
-  // 從上層生物死亡產生雪花
-  addSnow(x,y,mass){
-    if(mass<0.2||snowflakes.length>=MAX_SNOW)return;
+  addSnow(x,y,mass){if(mass<0.2||snowflakes.length>=MAX_SNOW)return;
     const n=Math.min(3,Math.ceil(mass/3));
-    for(let i=0;i<n;i++) snowflakes.push(new Snowflake(x+rnd(8,-8),y,mass/n));
-  }
+    for(let i=0;i<n;i++) snowflakes.push(new Snowflake(x+rnd(8,-8),y,mass/n));}
   wrap(o){o.x=((o.x%W)+W)%W;o.y=((o.y%H)+H)%H;}
 
   step(){
     this.tick++; const sun=this.sun();
-    // 更新種群趨勢記錄
+    // 歷史記錄
     if(this.tick-this._histTick>=90){
-      this._histTick=this.tick;
-      const t=this.totals();
+      this._histTick=this.tick; const t=this.totals();
       this.history.push([this.tick, t.weed, t.plank, t.small, t.mid, t.big]);
       if(this.history.length>600) this.history=this.history.slice(-600);
     }
@@ -379,53 +339,31 @@ class World{
       if(o.kind===WEED||o.kind===PLANK) foodGrid.add(o);
       if(o.kind===WEED){weedGrid.add(o);this.weedCount++;}
       if(o.kind===FAUNA){animGrid.add(o); if(o.school>0.2) schoolGrid.add(o);} }
-    this._schoolGrid=schoolGrid;
     const detGrid=new Grid(70); for(const d of this.detritus) detGrid.add(d);
     if(this.tick%4===0) this.diffuse();
-
     const nb=[];
     for(let i=this.orgs.length-1;i>=0;i--){ const o=this.orgs[i]; if(o.dead) continue; o.age++;
       if(o.kind===WEED) this.stepWeed(o,sun,nb);
       else if(o.kind===PLANK) this.stepPlank(o,sun,detGrid,nb);
       else this.stepFauna(o,foodGrid,detGrid,weedGrid,animGrid,schoolGrid,nb); }
-
-    // 碎屑分解
     for(let i=this.detritus.length-1;i>=0;i--){ const d=this.detritus[i];
       d.x+=d.vx*0.02; d.y+=d.vy*0.02; d.vy*=0.99; d.vx*=0.98; d.x=((d.x%W)+W)%W; if(d.y>H-2){d.y=H-2;d.vy=0;}
       const dec=Math.min(d.m,0.012+d.m*0.004); d.m-=dec; this.addDiss(d.x,d.y,dec);
       if(d.m<=0.05){ this.addDiss(d.x,d.y,d.m); this.detritus.splice(i,1); } }
-
-    // 收集上層死亡的生物量轉為雪花
     const alive=[]; for(const o of this.orgs){
-      if(o.dead){
-        if(o.y<H*0.6) this.addSnow(o.x,o.y,o.mass*0.3); // 上層 → 雪花
-        this.addDetritus(o.x,o.y,o.mass);
-      }else alive.push(o); }
+      if(o.dead){ if(o.y<H*0.6) this.addSnow(o.x,o.y,o.mass*0.3); this.addDetritus(o.x,o.y,o.mass); }
+      else alive.push(o); }
     this.orgs=alive.concat(nb);
-
-    // 雪花向下沉降
-    for(let i=snowflakes.length-1;i>=0;i--){
-      const s=snowflakes[i]; s.step();
-      if(s.y>H-10||s.mass<0.01){ // 落到底部→釋放營養
-        this.addDiss(s.x,clamp(s.y,H-10,H-5),s.mass*1.5);
-        snowflakes.splice(i,1); continue; }
-      // 海底高處也有可能卡住
-      const dep=depthAt(this.terrain,s.x,s.y);
-      if(dep>0.7){ // 深海
-        s.speed*=0.98; // 深海阻力大
-      }
-    }
-    // 補充雪花（從上層死亡生物已處理）
-
-    // 浮游生物從剩餘溶解態營養萌芽
+    // 雪花
+    for(let i=snowflakes.length-1;i>=0;i--){ const s=snowflakes[i]; s.step();
+      if(s.y>H-10||s.mass<0.01){ this.addDiss(s.x,clamp(s.y,H-10,H-5),s.mass*1.5); snowflakes.splice(i,1); } }
+    // 浮游從剩餘營養萌芽
     if(this.tick%5===0){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>60){
       const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
       const m=this.takeDiss(cx,cy,4); if(m>2) this.orgs.push(new Org(PLANK,clamp(cx,4,W-4),clamp(cy,4,H-4),{mass:m})); } }
-    // 安全網
     if(this.tick%200===0) this.safetyNets();
     if(this.tick%90===0) this.census();
   }
-
   census(){
     const NB=24,bw=360/NB,MIN=10;
     const cnt=new Array(NB).fill(0),hc=new Array(NB).fill(0),hs=new Array(NB).fill(0),sz=new Array(NB).fill(0);
@@ -448,7 +386,6 @@ class World{
     if(this.species.length>170){ const dead=this.species.filter(s=>s.died!==null).sort((a,b)=>a.died-b.died);
       const drop=new Set(dead.slice(0,this.species.length-170).map(s=>s.id)); this.species=this.species.filter(s=>!drop.has(s.id)); }
   }
-
   safetyNets(){
     let grazers=0, mids=0, apex=0;
     for(const o of this.orgs) if(o.kind===FAUNA){ if(o.size<0.28)grazers++; else if(o.size<0.55)mids++; else apex++; }
@@ -467,25 +404,10 @@ class World{
       for(let n=0;n<Math.min(4,ms.length);n++){ const o=ms[n];
         o.size=rnd(0.8,0.62); o.diet=rnd(0.92,0.75); o.reproMass=reproMassOf(o.size); o.hue=rnd(26,0); o.maxAge=1200+o.size*5000+rnd(600); } }
   }
-
   diffuse(){ const d=this.diss,c=this.ncols,r=this.nrows,out=new Float32Array(d.length),D=0.12;
     for(let y=0;y<r;y++)for(let x=0;x<c;x++){ const i=y*c+x; let f=0;
       if(x>0)f+=d[i-1]-d[i]; if(x<c-1)f+=d[i+1]-d[i]; if(y>0)f+=d[i-c]-d[i]; if(y<r-1)f+=d[i+c]-d[i];
       out[i]=d[i]+D*f; } this.diss.set(out); }
-
-  // ── 洋流對生物位置的影響 ──
-  applyCurrent(o){
-    if(this.curStr<0.01) return;
-    const cur=currentAt(this.currentField,o.x,o.y);
-    const str=this.curStr*0.4;
-    // 深度影響：淺層洋流強，深層弱
-    const dep=depthAt(this.terrain,o.x,o.y);
-    const depthFactor=1-dep*0.6;
-    o.x+=cur.x*str*depthFactor;
-    o.y+=cur.y*str*depthFactor;
-    this.wrap(o);
-  }
-
   stepWeed(o,sun,nb){
     o.mass+=this.takeDiss(o.x,o.y,0.6*sun); o.mass-=0.045; this.addDiss(o.x,o.y,0.045);
     if(o.mass>110){this.addDetritus(o.x,o.y,o.mass-110);o.mass=110;}
@@ -501,30 +423,24 @@ class World{
     if(o.mass<=1.4){o.dead=true;return;}
     if(o.mass>11 && this.orgs.length+nb.length<3400){ o.mass*=0.5;
       nb.push(new Org(PLANK,o.x+rnd(12,-12),o.y+rnd(12,-12),{mass:o.mass,hue:(o.hue+rnd(10,-10)+360)%360,gen:o.gen+1,line:o.line})); this.gen=Math.max(this.gen,o.gen+1);} }
-
   stepFauna(o,foodGrid,detGrid,weedGrid,animGrid,schoolGrid,nb){
     if(o.age>o.maxAge){o.dead=true;return;}
     const sense=44+o.sense*150, S=sense;
     const canPlants=o.diet<0.88, canMeat=o.diet>0.2;
     const myR=o.r, full=o.mass>o.reproMass*0.95;
-
-    // ── 魚群行為（v4 新增） ──
+    // 魚群行為
     let schoolDX=0, schoolDY=0, schoolCount=0, schoolAlignX=0, schoolAlignY=0;
-    if(o.school>0.1 && o.size<0.6 && o.size>0.2){ // 只有魚類會群游
-      const nearby=this._schoolGrid?this._schoolGrid.near(o.x,o.y):[];
+    if(o.school>0.1 && o.size<0.6 && o.size>0.2){
+      const nearby=schoolGrid?schoolGrid.near(o.x,o.y):[];
       for(const f of nearby){
         if(f===o||f.kind!==FAUNA||f.dead) continue;
         const dx=f.x-o.x, dy=f.y-o.y, d=Math.hypot(dx,dy);
         if(d<80 && Math.abs(f.size-o.size)<0.15 && Math.abs(f.diet-o.diet)<0.3){
-          schoolCount++;
-          schoolDX -= dx/d;          // 分離（避免碰撞）
-          schoolAlignX += f.vx;       // 對齊
-          schoolAlignY += f.vy;
+          schoolCount++; schoolDX-=dx/d; schoolAlignX+=f.vx; schoolAlignY+=f.vy;
         }
       }
     }
-
-    // ── 覓食 ──
+    // 覓食
     let ed=S,edx=0,edy=0,edT=null;
     if(canPlants){
       for(const f of foodGrid.near(o.x,o.y)){ const dx=f.x-o.x,dy=f.y-o.y,d=Math.hypot(dx,dy); if(d<ed){ed=d;edx=dx;edy=dy;edT=f;} }
@@ -537,41 +453,30 @@ class World{
       if(a.r>myR*1.4){ if(d<threat){threat=d;tx=dx;ty=dy;} } } }
     let fx=edx,fy=edy,fdist=ed;
     if(prey && (pd<ed || o.diet>0.6)){ fx=pdx;fy=pdy;fdist=pd; }
-
     const ca=Math.cos(o.a),sa=Math.sin(o.a), I=o._i;
-    I[0]= fdist<S?1-fdist/S:0;
-    I[1]= fdist<S?(fx*ca+fy*sa)/S:0;
-    I[2]= fdist<S?(-fx*sa+fy*ca)/S:0;
-    I[3]= threat<S?1-threat/S:0;
-    I[4]= threat<S?(-tx*sa+ty*ca)/S:0;
+    I[0]= fdist<S?1-fdist/S:0; I[1]= fdist<S?(fx*ca+fy*sa)/S:0; I[2]= fdist<S?(-fx*sa+fy*ca)/S:0;
+    I[3]= threat<S?1-threat/S:0; I[4]= threat<S?(-tx*sa+ty*ca)/S:0;
     I[5]= clamp(o.mass/o.reproMass,0,1);
-    I[6]= schoolCount>1?clamp(schoolCount/8,0,1):0;   // 群遊輸入
+    I[6]= schoolCount>1?clamp(schoolCount/8,0,1):0;
     I[7]=1;
     think(o.brain,I,o._h,o._o);
     const raw=o._o[0]; o.steerBias=o.steerBias*0.96+raw*0.04; o.a+=(raw-o.steerBias)*0.3;
-
-    // 群遊力（直接加在轉向上，與神經網路並行）
+    // 群遊力
     if(schoolCount>1 && o.school>0.2){
-      const sepStr=o.school*0.04;
-      const aliStr=o.school*0.03;
-      // 分離方向（世界座標）
       const sAngle=Math.atan2(schoolDY,schoolDX);
       const aliAngle=Math.atan2(schoolAlignY/schoolCount,schoolAlignX/schoolCount);
       let diffS=sAngle-o.a; while(diffS>Math.PI)diffS-=TAU; while(diffS<-Math.PI)diffS+=TAU;
       let diffA=aliAngle-o.a; while(diffA>Math.PI)diffA-=TAU; while(diffA<-Math.PI)diffA+=TAU;
-      o.a+=diffS*sepStr+diffA*aliStr;
+      o.a+=diffS*o.school*0.04+diffA*o.school*0.03;
     }
-
     const thrust=(o._o[1]*0.5+0.5)*(0.04+o.speed*0.34)*lerp(0.95,1.5,o.size);
     o.vx+=Math.cos(o.a)*thrust; o.vy+=Math.sin(o.a)*thrust; o.vx*=0.9; o.vy*=0.9;
-    // 洋流影響
+    // 洋流
     const cur=currentAt(this.currentField,o.x,o.y);
     const dep=depthAt(this.terrain,o.x,o.y);
     const depthFactor=1-dep*0.6;
-    o.x+=o.vx+cur.x*this.curStr*0.3*depthFactor;
-    o.y+=o.vy+cur.y*this.curStr*0.3*depthFactor;
+    o.x+=o.vx+cur.x*this.curStr*0.3*depthFactor; o.y+=o.vy+cur.y*this.curStr*0.3*depthFactor;
     this.wrap(o);
-
     // 代謝
     const sp=Math.hypot(o.vx,o.vy), met=0.025+o.mass*0.0022+sp*0.03;
     o.mass-=met; this.addDiss(o.x,o.y,met);
@@ -599,24 +504,20 @@ class World{
         hue:(o.hue+(Math.random()<this.mutRate?rnd(14,-14):0)+360)%360, gen:o.gen+1, line:o.line }));
       this.gen=Math.max(this.gen,o.gen+1); }
   }
-
   totals(){ let bio=0,det=0,diss=0,weed=0,plank=0,small=0,mid=0,big=0,sc=0,scn=0;
     for(const o of this.orgs){ bio+=o.mass;
-      if(o.kind===WEED)weed++;
-      else if(o.kind===PLANK)plank++;
+      if(o.kind===WEED)weed++; else if(o.kind===PLANK)plank++;
       else { if(o.size<0.28)small++; else if(o.size<0.55)mid++; else big++;
         if(o.school>0.3&&o.size>0.2&&o.size<0.6){sc+=o.school;scn++;} } }
     for(const d of this.detritus) det+=d.m; for(let i=0;i<this.diss.length;i++) diss+=this.diss[i];
-    const avgSchool=scn>0?sc/scn:0;
-    return {bio,det,diss,weed,plank,small,mid,big,total:bio+det+diss,avgSchool}; }
+    return {bio,det,diss,weed,plank,small,mid,big,total:bio+det+diss,avgSchool:scn>0?sc/scn:0}; }
 
-  // ── 保存/讀取 ──────────────────────────────────────────────────────────
+  // ── 存檔/讀檔 ──
   toSaveData(){
     return {
       tick:this.tick, gen:this.gen, dayLen:this.dayLen, mutRate:this.mutRate, curStr:this.curStr,
       orgs:this.orgs.map(o=>{
-        const base={k:o.kind,x:o.x,y:o.y,age:o.age,gen:o.gen,line:o.line,vx:o.vx,vy:o.vy,a:o.a,
-          dead:o.dead,mass:o.mass,hue:o.hue};
+        const base={k:o.kind,x:o.x,y:o.y,age:o.age,gen:o.gen,line:o.line,vx:o.vx,vy:o.vy,a:o.a,dead:o.dead,mass:o.mass,hue:o.hue};
         if(o.kind===WEED){base.sw=o.sway;base.ph=o.phase;base.ln=o.len;}
         else if(o.kind===PLANK){base.dr=o.drift;base.dp=o.dphase;}
         else {base.sz=o.size;base.dt=o.diet;base.sp=o.speed;base.se=o.sense;base.sc=o.school;
@@ -636,34 +537,25 @@ class World{
     w.tick=d.tick||0; w.gen=d.gen||0; w.dayLen=d.dayLen||3600; w.mutRate=d.mutRate||0.28; w.curStr=d.curStr||0.4;
     w.orgs=d.orgs.map(o=>{
       const org=new Org(o.k,o.x,o.y,{gen:o.gen,line:o.line});
-      org.age=o.age; org.vx=o.vx||0; org.vy=o.vy||0; org.a=o.a||0; org.dead=o.dead||false;
-      org.mass=o.mass; org.hue=o.hue;
+      org.age=o.age; org.vx=o.vx||0; org.vy=o.vy||0; org.a=o.a||0; org.dead=o.dead||false; org.mass=o.mass; org.hue=o.hue;
       if(o.k===WEED){org.sway=o.sw;org.phase=o.ph;org.len=o.ln;}
       else if(o.k===PLANK){org.drift=o.dr;org.dphase=o.dp;}
-      else {org.size=o.sz;org.diet=o.dt;org.speed=o.sp;org.sense=o.se;org.school=o.sc||0;
-        org.reproMass=o.rm;org.maxAge=o.ma;
-        org.brain=o.br?new Float32Array(o.br):randBrain();
-        org.steerBias=0;org._h=new Float32Array(N_HID);org._o=new Float32Array(N_OUT);org._i=new Float32Array(N_IN);}
+      else {org.size=o.sz;org.diet=o.dt;org.speed=o.sp;org.sense=o.se;org.school=o.sc||0;org.reproMass=o.rm;org.maxAge=o.ma;
+        org.brain=o.br?new Float32Array(o.br):randBrain();org.steerBias=0;org._h=new Float32Array(N_HID);org._o=new Float32Array(N_OUT);org._i=new Float32Array(N_IN);}
       return org;
     });
-    w.detritus=d.detritus||[];
-    w.species=d.species||[];
+    w.detritus=d.detritus||[]; w.species=d.species||[]; w.history=d.history||[];
     if(d.diss){w.diss=new Float32Array(d.diss);}else{w.diss=new Float32Array(w.ncols*w.nrows);for(let i=0;i<w.diss.length;i++)w.diss[i]=46+rnd(8);}
-    w.history=d.history||[];
     w.nextSid=d.nextSid||1; NEXT_LINE=d.NEXT_LINE||(Math.max(1,...d.orgs.map(o=>o.line||0))+1)||1;
-    // 重建雪花
-    snowflakes=(d.snowflakes||[]).map(s=>{
-      const f=new Snowflake(s.x,s.y,1); f.mass=s.mass; f.speed=s.speed; f.drift=s.drift; f.size=s.size; f.phase=s.phase;
-      return f;
-    });
+    snowflakes=(d.snowflakes||[]).map(s=>{const f=new Snowflake(s.x,s.y,1);f.mass=s.mass;f.speed=s.speed;f.drift=s.drift;f.size=s.size;f.phase=s.phase;return f;});
     return w;
   }
 }
 let world=new World();
 
-// ── 水深與地形（在繪圖中直接處理色調） ──
-
-// ── 繪圖 ────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+// 繪圖 — 基底完全與 v3 相同，v4 新功能以極淡疊層加入
+// ════════════════════════════════════════════════════════════════════════
 let selected=null;
 const skyDay=[12,38,52], skyNight=[3,7,18];
 
@@ -671,42 +563,24 @@ function draw(){
   const sun=world.sun(); const bg=skyDay.map((d,i)=>Math.round(lerp(skyNight[i],d,sun)));
   ctx.fillStyle=`rgb(${bg[0]},${bg[1]},${bg[2]})`; ctx.fillRect(0,0,CW,CH);
   ctx.save(); ctx.translate(CW/2,CH/2); ctx.scale(cam.zoom,cam.zoom); ctx.translate(-cam.x,-cam.y);
-  const m=70/cam.zoom, vx0=cam.x-(CW/2)/cam.zoom-m, vx1=cam.x+(CW/2)/cam.zoom+m;
-  const vy0=cam.y-(CH/2)/cam.zoom-m, vy1=cam.y+(CH/2)/cam.zoom+m;
-
-  // ── 基本海底漸層（與 v3 相同，保證生物可見） ──
-  const fg=ctx.createLinearGradient(0,0,0,H);
-  fg.addColorStop(0,`rgb(${bg[0]},${bg[1]},${bg[2]})`);
-  fg.addColorStop(1,'rgb(2,4,10)');
+  const m=70/cam.zoom, vx0=cam.x-(CW/2)/cam.zoom-m, vx1=cam.x+(CW/2)/cam.zoom+m, vy0=cam.y-(CH/2)/cam.zoom-m, vy1=cam.y+(CH/2)/cam.zoom+m;
+  // === 基底海洋漸層（與 v3 完全一致） ===
+  const fg=ctx.createLinearGradient(0,0,0,H); fg.addColorStop(0,`rgb(${bg[0]},${bg[1]},${bg[2]})`); fg.addColorStop(1,'rgb(2,4,10)');
   ctx.fillStyle=fg; ctx.fillRect(0,0,W,H);
-
-  // ── 水深微調：在底色上疊加非常淡的地形色塊 ──
-  const {terrain}=world;
-  for(let y=Math.max(0,(vy0/60)|0);y<=Math.min(H/60,(vy1/60)|0);y++){
-    for(let x=Math.max(0,(vx0/60)|0);x<=Math.min(W/60,(vx1/60)|0);x++){
-      const wx=x*60, wy=y*60;
-      const dep=depthAt(terrain,wx,wy);
-      // 淺水（dep < 0.3）加一點透光青綠，深水加一點墨藍
-      const tint=dep<0.3?`rgba(80,180,220,${(0.3-dep)*0.08})`:
-                 dep>0.7?`rgba(0,10,30,${(dep-0.7)*0.12})`:'rgba(0,0,0,0)';
-      if(tint!=='rgba(0,0,0,0)'){ctx.fillStyle=tint;ctx.fillRect(wx,wy,61,61);}
+  // === v4：地形極淡疊色（只有在縮放夠近時才可見） ===
+  const ter=world.terrain;
+  if(cam.zoom>0.6){
+    for(let y=Math.max(0,(vy0/50)|0);y<=Math.min(H/50,(vy1/50)|0);y++){
+      for(let x=Math.max(0,(vx0/50)|0);x<=Math.min(W/50,(vx1/50)|0);x++){
+        const dep=depthAt(ter,x*50,y*50);
+        if(dep<0.35){ ctx.fillStyle=`rgba(90,190,230,${(0.35-dep)*0.04})`; ctx.fillRect(x*50,y*50,51,51); }
+        else if(dep>0.7){ ctx.fillStyle=`rgba(0,10,25,${(dep-0.7)*0.06})`; ctx.fillRect(x*50,y*50,51,51); }
+      }
     }
   }
-  // 等深線（極淡，僅靠近看才有）
-  ctx.strokeStyle='rgba(255,255,255,.02)'; ctx.lineWidth=0.5/cam.zoom;
-  for(let y=Math.max(0,(vy0/80)|0);y<=Math.min(H/80,(vy1/80)|0);y++){
-    for(let x=Math.max(0,(vx0/80)|0);x<=Math.min(W/80,(vx1/80)|0);x++){
-      const d1=depthAt(terrain,x*80,y*80);
-      const d2=depthAt(terrain,x*80+80,y*80);
-      if(Math.abs(d1-d2)>0.15){ctx.beginPath();ctx.moveTo(x*80,y*80);ctx.lineTo(x*80+80,y*80);ctx.stroke();}
-      const d3=depthAt(terrain,x*80,y*80+80);
-      if(Math.abs(d1-d3)>0.15){ctx.beginPath();ctx.moveTo(x*80,y*80);ctx.lineTo(x*80,y*80+80);ctx.stroke();}
-    }
-  }
-
-  // 水面光線
   const tt=performance.now()*0.001;
-  if(sun>0.25){ ctx.globalAlpha=(sun-0.25)*0.12; for(let i=0;i<6;i++){ const x=(i/6)*W+W*0.05; ctx.fillStyle='#bfe9ff';
+  // === 水面光線（與 v3 一致） ===
+  if(sun>0.25){ ctx.globalAlpha=(sun-0.25)*0.15; for(let i=0;i<6;i++){ const x=(i/6)*W+W*0.05; ctx.fillStyle='#bfe9ff';
     ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+160,0); ctx.lineTo(x+520,H); ctx.lineTo(x+360,H); ctx.closePath(); ctx.fill(); } ctx.globalAlpha=1;
     ctx.globalCompositeOperation='lighter';
     for(let i=0;i<14;i++){ const cx=((i*523+Math.sin(tt*0.4+i)*120)%W+W)%W, cy=((i*271+Math.cos(tt*0.3+i*1.7)*80)%(H*0.55));
@@ -714,62 +588,51 @@ function draw(){
       const g=ctx.createRadialGradient(cx,cy,0,cx,cy,rr); g.addColorStop(0,`rgba(160,230,255,${a})`); g.addColorStop(1,'rgba(160,230,255,0)');
       ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,rr,0,TAU); ctx.fill(); }
     ctx.globalCompositeOperation='source-over'; }
-
-  // 洋流視覺化（淡箭頭）
-  if(world.curStr>0.05 && cam.zoom>0.4){
-    const cf=world.currentField;
-    const step=120/cam.zoom;
-    for(let y=Math.max(0,((vy0-step)/step)|0);y<=Math.min(H/step,((vy1)/step)|0);y++){
-      for(let x=Math.max(0,((vx0-step)/step)|0);x<=Math.min(W/step,((vx1)/step)|0);x++){
-        const wx=x*step, wy=y*step;
-        const cur=currentAt(cf,wx,wy);
-        const mag=Math.hypot(cur.x,cur.y);
-        if(mag<0.05)continue;
-        const a=Math.atan2(cur.y,cur.x);
-        const len=Math.min(16,mag*18)*world.curStr;
-        ctx.save(); ctx.translate(wx,wy); ctx.rotate(a);
-        ctx.strokeStyle=`rgba(92,242,196,${mag*0.15*world.curStr})`;
-        ctx.lineWidth=1/cam.zoom; ctx.beginPath(); ctx.moveTo(-len/2,0); ctx.lineTo(len/2,0); ctx.stroke();
-        ctx.fillStyle=`rgba(92,242,196,${mag*0.2*world.curStr})`;
-        ctx.beginPath(); ctx.moveTo(len/2+3/cam.zoom,0); ctx.lineTo(len/2-4/cam.zoom,-2.5/cam.zoom); ctx.lineTo(len/2-4/cam.zoom,2.5/cam.zoom); ctx.closePath(); ctx.fill();
+  // === v4：洋流視覺（極淡） ===
+  if(world.curStr>0.1 && cam.zoom>0.5){
+    const step=100/cam.zoom;
+    for(let y=Math.max(0,(vy0/step)|0);y<=Math.min(H/step,(vy1/step)|0);y++){
+      for(let x=Math.max(0,(vx0/step)|0);x<=Math.min(W/step,(vx1/step)|0);x++){
+        const cur=currentAt(world.currentField,x*step,y*step);
+        const mag=Math.hypot(cur.x,cur.y); if(mag<0.08)continue;
+        const a=Math.atan2(cur.y,cur.x), len=Math.min(14,mag*16)*world.curStr;
+        ctx.save(); ctx.translate(x*step,y*step); ctx.rotate(a);
+        ctx.strokeStyle=`rgba(92,242,196,${mag*0.08*world.curStr})`; ctx.lineWidth=0.8/cam.zoom;
+        ctx.beginPath(); ctx.moveTo(-len/2,0); ctx.lineTo(len/2,0); ctx.stroke();
         ctx.restore();
       }
     }
   }
-
-  // 海洋雪花
-  ctx.fillStyle='rgba(200,210,220,.4)';
-  for(const s of snowflakes){ if(s.x<vx0||s.x>vx1||s.y<vy0||s.y>vy1)continue;
-    const a=0.2+s.mass*0.5;
-    ctx.globalAlpha=a; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,TAU); ctx.fill(); }
+  // === v4：海洋雪花 ===
+  for(const s of snowflakes){
+    if(s.x<vx0||s.x>vx1||s.y<vy0||s.y>vy1)continue;
+    ctx.globalAlpha=clamp(0.15+s.mass*0.4,0,0.6);
+    ctx.fillStyle='rgba(200,215,230,1)'; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,TAU); ctx.fill();
+  }
   ctx.globalAlpha=1;
-
-  // 營養水色
-  const cs=world.ncs;
-  const c0=Math.max(0,(vx0/cs)|0),c1=Math.min(world.ncols-1,(vx1/cs)|0),r0=Math.max(0,(vy0/cs)|0),r1=Math.min(world.nrows-1,(vy1/cs)|0);
+  // === 營養水色（與 v3 一致） ===
+  const cs=world.ncs, c0=Math.max(0,(vx0/cs)|0),c1=Math.min(world.ncols-1,(vx1/cs)|0),r0=Math.max(0,(vy0/cs)|0),r1=Math.min(world.nrows-1,(vy1/cs)|0);
   for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++){ const v=world.diss[r*world.ncols+c]; if(v>30){ ctx.fillStyle=`rgba(58,123,213,${Math.min(0.10,(v-30)*0.002)})`; ctx.fillRect(c*cs,r*cs,cs,cs); } }
-
-  // 碎屑
+  // === 碎屑（與 v3 一致） ===
   ctx.fillStyle='rgba(170,150,110,.5)';
   for(const d of world.detritus){ if(d.x<vx0||d.x>vx1||d.y<vy0||d.y>vy1)continue; ctx.beginPath(); ctx.arc(d.x,d.y,Math.min(3,1+d.m*0.15),0,TAU); ctx.fill(); }
-
-  const night=1-sun;
-  // 生產者
+  // === 生物繪圖（與 v3 完全一致） ===
+  const night=1-sun, t=performance.now()*0.001;
   for(const o of world.orgs){ if(o.kind===FAUNA||o.x<vx0||o.x>vx1||o.y<vy0||o.y>vy1) continue;
-    if(o.kind===WEED) drawWeed(o,tt,sun); else drawPlank(o,night); }
+    if(o.kind===WEED) drawWeed(o,t,sun); else drawPlank(o,night); }
   const fauna=world.orgs.filter(o=>o.kind===FAUNA&&o.x>=vx0&&o.x<=vx1&&o.y>=vy0&&o.y<=vy1).sort((a,b)=>a.size-b.size);
-  for(const o of fauna) drawFauna(o,tt,night);
+  for(const o of fauna) drawFauna(o,t,night);
   if(selected){ ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=2/cam.zoom; ctx.setLineDash([4/cam.zoom,4/cam.zoom]);
     ctx.beginPath(); ctx.arc(selected.x,selected.y,selected.r+6,0,TAU); ctx.stroke(); ctx.setLineDash([]); }
   ctx.restore();
-
-  // 暗角
+  // === 暗角（與 v3 一致） ===
   const vg=ctx.createRadialGradient(CW/2,CH/2,Math.min(CW,CH)*0.35,CW/2,CH/2,Math.max(CW,CH)*0.72);
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,`rgba(0,0,0,${0.28+night*0.22})`);
   ctx.fillStyle=vg; ctx.fillRect(0,0,CW,CH);
   drawMinimap();
 }
 
+// ── 生物繪圖函數（與 v3 完全一致） ──
 function drawWeed(o,t,sun){ const L=30+sun*22; ctx.strokeStyle=`hsl(${o.hue} 55% ${L}%)`; ctx.lineWidth=2.6/cam.zoom; ctx.lineCap='round';
   for(let b=0;b<3;b++){ const base=o.x+(b-1)*o.r*0.5; ctx.beginPath();
     for(let i=0;i<=6;i++){ const u=i/6, sway=Math.sin(t*o.sway*2+o.phase+u*2+b)*o.len*0.22*u;
@@ -795,16 +658,13 @@ function drawFauna(o,t,night){
   } else if(sz>0.56 && carn>0.5){ // 🦈 shark
     const bL=r*2.7, bH=r*0.62, sw=beat*r*0.7;
     const body=`hsl(${o.hue} 24% ${L-8}%)`, belly=`hsl(${o.hue} 18% ${L+16}%)`, finc=`hsl(${o.hue} 22% ${L-14}%)`;
-    ctx.fillStyle=finc; ctx.beginPath();
-    ctx.moveTo(-bL*0.58,0);
+    ctx.fillStyle=finc; ctx.beginPath(); ctx.moveTo(-bL*0.58,0);
     ctx.quadraticCurveTo(-bL*0.95,sw-r*0.3,-bL*1.16,sw-r*1.6);
     ctx.quadraticCurveTo(-bL*0.82,sw-r*0.2,-bL*0.72,sw*0.3);
     ctx.quadraticCurveTo(-bL*0.86,sw+r*0.2,-bL*1.0,sw+r*0.9);
     ctx.quadraticCurveTo(-bL*0.78,sw+r*0.1,-bL*0.58,0); ctx.closePath(); ctx.fill();
-    ctx.fillStyle=finc; ctx.beginPath();
-    ctx.moveTo(bL*0.06,-bH*0.72); ctx.lineTo(-bL*0.26,-bH*0.7-r*1.7); ctx.lineTo(-bL*0.16,-bH*0.72); ctx.closePath(); ctx.fill();
-    ctx.fillStyle=finc; ctx.beginPath();
-    ctx.moveTo(bL*0.22,bH*0.5); ctx.lineTo(bL*0.0,bH*0.55+r*1.2); ctx.lineTo(bL*0.3,bH*0.4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=finc; ctx.beginPath(); ctx.moveTo(bL*0.06,-bH*0.72); ctx.lineTo(-bL*0.26,-bH*0.7-r*1.7); ctx.lineTo(-bL*0.16,-bH*0.72); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=finc; ctx.beginPath(); ctx.moveTo(bL*0.22,bH*0.5); ctx.lineTo(bL*0.0,bH*0.55+r*1.2); ctx.lineTo(bL*0.3,bH*0.4); ctx.closePath(); ctx.fill();
     const snout=bL*0.94;
     const bg=ctx.createLinearGradient(0,-bH,0,bH); bg.addColorStop(0,body); bg.addColorStop(0.55,body); bg.addColorStop(1,belly);
     ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(snout,0);
@@ -874,52 +734,29 @@ let treeOpen=false;
 
 // 📊 種群趨勢圖
 const pollencv=document.getElementById('pollencanvas'), pctx=pollencv.getContext('2d');
-function sizePollen(){
-  const r=pollencv.parentElement.getBoundingClientRect();
-  pollencv.width=r.width*DPR; pollencv.height=r.height*DPR;
-  pctx.setTransform(DPR,0,0,DPR,0,0);
-}
+function sizePollen(){ const r=pollencv.parentElement.getBoundingClientRect(); pollencv.width=r.width*DPR; pollencv.height=r.height*DPR; pctx.setTransform(DPR,0,0,DPR,0,0); }
 function drawPollenChart(){
-  const w=pollencv.width/DPR, h=pollencv.height/DPR;
-  pctx.clearRect(0,0,w,h);
+  const w=pollencv.width/DPR, h=pollencv.height/DPR; pctx.clearRect(0,0,w,h);
   const hist=world.history; if(hist.length<2){ pctx.fillStyle='#56708a'; pctx.font='10px ui-monospace'; pctx.fillText('等待數據…',8,16); return; }
   const padL=32,padR=8,padT=16,padB=14, gw=w-padL-padR, gh=h-padT-padB;
-  const t0=hist[0][0], t1=hist[hist.length-1][0];
-  // 找出各群最大值
-  let maxV=1;
-  for(const hh of hist) for(let j=3;j<=5;j++) if(hh[j]>maxV) maxV=hh[j];
+  let maxV=1; for(const hh of hist) for(let j=3;j<=5;j++) if(hh[j]>maxV) maxV=hh[j];
   maxV=Math.ceil(maxV/10)*10+10;
-  // 索引 1=weed(不用),2=plank(不用),3=small,4=mid,5=big
-  const colors=['','','','#ffd27a','#ff9a5a','#ff5a6a'];
-  const labels=['','','','草食','中魚','頂級'];
-  const lineDash=[[],[],[],[],[3,2]];
-  // 畫網格
+  const colors=['','','','#ffd27a','#ff9a5a','#ff5a6a'], labels=['','','','草食','中魚','頂級'];
   pctx.strokeStyle='rgba(255,255,255,.06)'; pctx.lineWidth=0.5;
   for(let i=0;i<=4;i++){ const y=padT+gh*(1-i/4); pctx.beginPath(); pctx.moveTo(padL,y); pctx.lineTo(w-padR,y); pctx.stroke(); }
   pctx.fillStyle='#3a4a5a'; pctx.font='9px ui-monospace'; pctx.textAlign='right';
   for(let i=0;i<=4;i++){ const y=padT+gh*(1-i/4); pctx.fillText(Math.round(maxV*i/4),padL-4,y+3); }
   pctx.textAlign='center'; pctx.fillText('←  時間  →',padL+gw/2,h-2);
-  // 畫線
   for(let j=3;j<=5;j++){
-    const pts=hist.map((hh,i)=>{
-      const x=padL+ (i/(hist.length-1))*gw;
-      const y=padT+gh*(1-hh[j]/maxV);
-      return [x,y];
-    });
-    pctx.strokeStyle=colors[j]; pctx.lineWidth=1.5;
-    if(lineDash[j]) pctx.setLineDash(lineDash[j]);
-    else pctx.setLineDash([]);
-    pctx.beginPath(); pts.forEach(([x,y],i)=>i?pctx.lineTo(x,y):pctx.moveTo(x,y)); pctx.stroke();
+    const pts=hist.map((hh,i)=>{const x=padL+(i/(hist.length-1))*gw;const y=padT+gh*(1-hh[j]/maxV);return [x,y];});
+    pctx.strokeStyle=colors[j]; pctx.lineWidth=1.5; pctx.beginPath(); pts.forEach(([x,y],i)=>i?pctx.lineTo(x,y):pctx.moveTo(x,y)); pctx.stroke();
   }
-  pctx.setLineDash([]);
-  // 圖例
   pctx.font='9px ui-monospace'; pctx.textAlign='left';
-  for(let j=3;j<=5;j++){ const lx=padL+10+(j-3)*48; pctx.fillStyle=colors[j];
-    pctx.fillRect(lx,3,10,8); pctx.fillStyle='#8aa0b8'; pctx.fillText(labels[j],lx+13,11); }
+  for(let j=3;j<=5;j++){ const lx=padL+10+(j-3)*48; pctx.fillStyle=colors[j]; pctx.fillRect(lx,3,10,8); pctx.fillStyle='#8aa0b8'; pctx.fillText(labels[j],lx+13,11); }
 }
 let chartOpen=false;
 
-// ── HUD ────────────────────────────────────────────────────────────────
+// ── HUD ──
 const $=id=>document.getElementById(id);
 function updateHUD(){ const T=world.totals();
   $('s-weed').textContent=T.weed; $('s-plank').textContent=T.plank;
@@ -934,10 +771,7 @@ function updateHUD(){ const T=world.totals();
   $('clock').textContent=`${sun>0.6?'☀️':sun>0.25?(frac<0.5?'🌅':'🌇'):'🌙'} ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   if(selected && !selected.dead){ const o=selected;
     const role=o.size<0.28?'🦐 草食':o.size<0.55?'🐟 中魚':'🦈 頂級掠食者';
-    $('inspect').innerHTML=`<b>${role}</b> · 世代 ${o.gen}<br>`+
-      `體型 ${(o.size*100|0)} · 食性 ${(o.diet*100|0)}% 肉食<br>`+
-      `質量 ${o.mass|0}/${o.reproMass|0} · 年齡 ${o.age}/${o.maxAge|0}<br>`+
-      `群游傾向 ${o.school?(o.school*100|0):'?'}% · 速度 ${o.speed?(o.speed*100|0):'?'}`;
+    $('inspect').innerHTML=`<b>${role}</b> · 世代 ${o.gen}<br>體型 ${(o.size*100|0)} · 食性 ${(o.diet*100|0)}% 肉食<br>質量 ${o.mass|0}/${o.reproMass|0} · 年齡 ${o.age}/${o.maxAge|0}<br>群游傾向 ${o.school?(o.school*100|0):'?'}% · 速度 ${o.speed?(o.speed*100|0):'?'}`;
   } else if(selected && selected.dead){ $('inspect').textContent='⚠️ 該生物已死亡'; selected=null; }
 }
 function pickAt(wx,wy){ let best=null,bd=1e9; for(const o of world.orgs){ if(o.kind!==FAUNA)continue; const d=Math.hypot(o.x-wx,o.y-wy); if(d<Math.max(16,o.r+6)&&d<bd){bd=d;best=o;} } return best; }
@@ -953,18 +787,13 @@ cv.addEventListener('touchstart',e=>{if(e.touches.length===1){const p=txy(e.touc
 cv.addEventListener('touchmove',e=>{e.preventDefault();if(e.touches.length>=2&&pinch){const a=txy(e.touches[0]),b=txy(e.touches[1]);const mx=(a.x+b.x)/2,my=(a.y+b.y)/2,d=Math.hypot(a.x-b.x,a.y-b.y)||1;const bf=s2w(mx,my);cam.zoom=clamp(cam.zoom*(d/pinch.d),cam.min,cam.max);const af=s2w(mx,my);cam.x+=bf.x-af.x;cam.y+=bf.y-af.y;cam.x-=(mx-pinch.mx)/cam.zoom;cam.y-=(my-pinch.my)/cam.zoom;clampCam();pinch.d=d;pinch.mx=mx;pinch.my=my;}else if(e.touches.length===1&&drag){const p=txy(e.touches[0]);if(drag.mm){const w=mmTo(p.x,p.y);cam.x=w.x;cam.y=w.y;clampCam();return;}const dx=p.x-drag.sx,dy=p.y-drag.sy;drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));cam.x=drag.cx-dx/cam.zoom;cam.y=drag.cy-dy/cam.zoom;clampCam();}},{passive:false});
 cv.addEventListener('touchend',e=>{if(drag&&!drag.mm&&drag.moved<6&&performance.now()-drag.t<300){const p=s2w(drag.sx,drag.sy); if(placeBrush) spawnAt(p.x,p.y); else selected=pickAt(p.x,p.y);}if(e.touches.length<2)pinch=null;if(e.touches.length===0)drag=null;},{passive:false});
 
-// ── 控制項 ──────────────────────────────────────────────────────────────
+// ── 控制項 ──
 $('k-mut').addEventListener('input',e=>{world.mutRate=e.target.value/100;});
 let simSpeed=3; $('k-spd').addEventListener('input',e=>{simSpeed=+e.target.value;$('spd-val').textContent='×'+simSpeed;});
 $('k-day').addEventListener('input',e=>{world.dayLen=+e.target.value;$('day-val').textContent=e.target.value;});
-$('k-cur').addEventListener('input',e=>{world.curStr=e.target.value/100;
-  const labels=['無','微弱','低','中等','強','很強']; const idx=Math.round(world.curStr*5);
-  $('cur-val').textContent=labels[clamp(idx,0,5)];});
+$('k-cur').addEventListener('input',e=>{world.curStr=e.target.value/100;const labels=['無','微弱','低','中等','強','很強'];const idx=Math.round(world.curStr*5);$('cur-val').textContent=labels[clamp(idx,0,5)];});
 let paused=false; $('b-pause').addEventListener('click',e=>{paused=!paused;e.target.textContent=paused?'▶️ 繼續':'⏸ 暫停';});
-$('b-reset').addEventListener('click',()=>{
-  if(world.tick>100&&!confirm('確定要重置整個海域？所有演化進度將丟失。'))return;
-  world=new World(); world.dayLen=+$('k-day').value; world.mutRate=+$('k-mut').value/100; world.curStr=+$('k-cur').value/100;
-  snowflakes=[]; selected=null; showToast('🌊 海域已重置',1800);});
+$('b-reset').addEventListener('click',()=>{if(world.tick>100&&!confirm('確定要重置整個海域？所有演化進度將丟失。'))return;world=new World();world.dayLen=+$('k-day').value;world.mutRate=+$('k-mut').value/100;world.curStr=+$('k-cur').value/100;snowflakes=[];selected=null;showToast('🌊 海域已重置',1800);});
 $('b-fit').addEventListener('click',()=>{cam.zoom=cam.min;cam.x=W/2;cam.y=H/2;});
 
 // ── 放置工具 ──
@@ -977,8 +806,7 @@ function spawnAt(wx,wy){ let o;
   else if(placeBrush==='shark') o=new Org(FAUNA,wx,wy,{size:rnd(0.85,0.68),diet:rnd(0.95,0.78)});
   if(o) world.orgs.push(o);
 }
-function setBrush(b){ placeBrush=b; cv.style.cursor=b?'crosshair':'grab';
-  document.querySelectorAll('.brush').forEach(el=>el.classList.toggle('active',el.dataset.b===b)); }
+function setBrush(b){ placeBrush=b; cv.style.cursor=b?'crosshair':'grab'; document.querySelectorAll('.brush').forEach(el=>el.classList.toggle('active',el.dataset.b===b)); }
 document.querySelectorAll('.brush').forEach(el=>el.addEventListener('click',()=>setBrush(placeBrush===el.dataset.b?null:el.dataset.b)));
 $('b-brushoff').addEventListener('click',()=>setBrush(null));
 window.addEventListener('keydown',e=>{ if(e.key==='Escape') setBrush(null); });
@@ -993,44 +821,12 @@ $('b-chart').addEventListener('click',()=>{chartOpen=!chartOpen;$('chart-panel')
 $('chart-close').addEventListener('click',()=>{chartOpen=false;$('chart-panel').classList.remove('open');});
 window.addEventListener('resize',()=>{if(chartOpen)sizePollen();});
 
-// ── 存檔/讀檔 ──────────────────────────────────────────────────────────
-function saveGame(){
-  try{
-    const data=world.toSaveData();
-    localStorage.setItem('abyssal_v4_save',JSON.stringify(data));
-    showToast('💾 遊戲已儲存！',1800);
-  }catch(e){ showToast('❌ 存檔失敗：'+e.message,2500); }
-}
-function loadGame(){
-  try{
-    const raw=localStorage.getItem('abyssal_v4_save');
-    if(!raw){ showToast('❌ 沒有找到存檔',2000); return; }
-    const data=JSON.parse(raw);
-    world=World.fromSave(data);
-    snowflakes=data.snowflakes?data.snowflakes.map(s=>{
-      const f=new Snowflake(s.x,s.y,1); Object.assign(f,s); return f;
-    }):[];
-    selected=null;
-    // 同步滑桿
-    $('k-mut').value=world.mutRate*100;
-    $('k-day').value=world.dayLen;
-    $('k-cur').value=world.curStr*100;
-    const labels=['無','微弱','低','中等','強','很強']; const idx=Math.round(world.curStr*5);
-    $('cur-val').textContent=labels[clamp(idx,0,5)];
-    $('day-val').textContent=world.dayLen;
-    showToast('📂 遊戲已讀取！（世代 '+world.gen+'）',2200);
-  }catch(e){ showToast('❌ 讀檔失敗：'+e.message,2500); }
-}
+// ── 存檔/讀檔 ──
+function saveGame(){ try{localStorage.setItem('abyssal_v4_save',JSON.stringify(world.toSaveData()));showToast('💾 遊戲已儲存！',1800);}catch(e){showToast('❌ 存檔失敗：'+e.message,2500);} }
+function loadGame(){ try{const raw=localStorage.getItem('abyssal_v4_save');if(!raw){showToast('❌ 沒有找到存檔',2000);return;}const d=JSON.parse(raw);world=World.fromSave(d);selected=null;$('k-mut').value=world.mutRate*100;$('k-day').value=world.dayLen;$('k-cur').value=world.curStr*100;const labels=['無','微弱','低','中等','強','很強'];const idx=Math.round(world.curStr*5);$('cur-val').textContent=labels[clamp(idx,0,5)];$('day-val').textContent=world.dayLen;showToast('📂 遊戲已讀取！（世代 '+world.gen+'）',2200);}catch(e){showToast('❌ 讀檔失敗：'+e.message,2500);} }
 $('b-save').addEventListener('click',saveGame);
 $('b-load').addEventListener('click',loadGame);
-$('b-export').addEventListener('click',()=>{
-  const data=world.toSaveData();
-  const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download='abyssal_export.json'; a.click();
-  URL.revokeObjectURL(url);
-  showToast('📋 已匯出 JSON 檔案',1800);
-});
+$('b-export').addEventListener('click',()=>{const blob=new Blob([JSON.stringify(world.toSaveData())],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='abyssal_export.json';a.click();URL.revokeObjectURL(url);showToast('📋 已匯出 JSON 檔案',1800);});
 
 // ── 主迴圈 ──
 let frame=0;
@@ -1043,8 +839,6 @@ function loop(){
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop); updateHUD();
-
-// ── 初始提示 ──
 showToast('🌊 深淵之海 v4 — 點擊海域檢視生物，控制面板在右側',3500);
 </script>
 </body>
