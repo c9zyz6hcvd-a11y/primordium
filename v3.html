@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Abyssal · a living sea (v3 · phase 1)</title>
+<title>Abyssal · a living sea (v3 · phase 2)</title>
 <style>
   :root{--ink:#e7eef7;--dim:#8aa0b8;--accent:#5cf2c4;--line:#1b2738;--gold:#ffd27a;}
   *{box-sizing:border-box}
@@ -23,6 +23,8 @@
   .stat b{font-variant-numeric:tabular-nums}.stat span{color:var(--dim)}
   .poolbar{height:10px;border-radius:5px;overflow:hidden;display:flex;margin-top:6px;background:#16202e}
   .poolbar>i{display:block;height:100%}
+  .pyr{display:flex;flex-direction:column;gap:2px;align-items:center;margin-top:4px}
+  .pyr>div{height:13px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#04060f;min-width:18px}
   button{background:#14203044;color:var(--ink);border:1px solid var(--line);border-radius:7px;
     padding:7px 9px;font:inherit;cursor:pointer;transition:.15s;flex:1}
   button:hover{border-color:var(--accent);color:var(--accent)}
@@ -31,8 +33,10 @@
   label.ctrl .v{color:var(--ink)}
   input[type=range]{width:100%;accent-color:var(--accent)}
   .clock{font-size:22px;text-align:center;letter-spacing:.05em}
-  .leg{display:flex;gap:10px;flex-wrap:wrap;color:var(--dim);font-size:11px;margin-top:4px}
+  .leg{display:flex;gap:8px;flex-wrap:wrap;color:var(--dim);font-size:10px;margin-top:4px}
   .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:3px;vertical-align:-1px}
+  #inspect{font-size:11px;color:var(--dim);min-height:34px}
+  #inspect b{color:var(--accent)}
   footer{color:#43566b;font-size:10px;margin-top:auto;line-height:1.6}
   .badge{display:inline-block;padding:1px 7px;border:1px solid var(--line);border-radius:20px;color:var(--gold);font-size:10px}
 </style>
@@ -41,60 +45,46 @@
 <div id="wrap">
   <div id="stage"><canvas id="c"></canvas></div>
   <aside id="side">
-    <div><h1>Abyssal</h1><div class="sub">a living sea · <span class="badge">v3 · phase 1</span></div></div>
+    <div><h1>Abyssal</h1><div class="sub">a living sea · <span class="badge">v3 · phase 2</span></div></div>
+
+    <div class="card"><h2>Time of day</h2><div class="clock" id="clock">☀️ 12:00</div></div>
 
     <div class="card">
-      <h2>Time of day</h2>
-      <div class="clock" id="clock">☀️ 12:00</div>
-    </div>
-
-    <div class="card">
-      <h2>Life</h2>
-      <div class="stat"><span>🌿 Seaweed</span><b id="s-weed">0</b></div>
+      <h2>Trophic pyramid</h2>
+      <div class="pyr" id="pyr"></div>
+      <div class="stat" style="margin-top:8px"><span>🌿 Seaweed</span><b id="s-weed">0</b></div>
       <div class="stat"><span>🦠 Plankton</span><b id="s-plank">0</b></div>
-      <div class="stat"><span>🦐 Shrimp</span><b id="s-shrimp">0</b></div>
-      <div class="stat"><span>❄️ Detritus</span><b id="s-det">0</b></div>
+      <div class="stat"><span>🦐 Small (graze)</span><b id="s-small">0</b></div>
+      <div class="stat"><span>🐟 Fish (mid)</span><b id="s-mid">0</b></div>
+      <div class="stat"><span>🦈 Big (apex)</span><b id="s-big">0</b></div>
       <div class="stat"><span>Generations</span><b id="s-gen">0</b></div>
     </div>
 
     <div class="card">
       <h2>Nutrient cycle (conserved)</h2>
-      <div class="poolbar">
-        <i id="p-diss" style="background:#3a7bd5"></i>
-        <i id="p-bio"  style="background:#5cf2c4"></i>
-        <i id="p-det"  style="background:#8a6d3b"></i>
-      </div>
-      <div class="leg">
-        <span><i class="dot" style="background:#3a7bd5"></i>dissolved</span>
-        <span><i class="dot" style="background:#5cf2c4"></i>biomass</span>
-        <span><i class="dot" style="background:#8a6d3b"></i>detritus</span>
-      </div>
-      <div class="stat" style="margin-top:6px"><span>Total (should stay flat)</span><b id="s-total">0</b></div>
+      <div class="poolbar"><i id="p-diss" style="background:#3a7bd5"></i><i id="p-bio" style="background:#5cf2c4"></i><i id="p-det" style="background:#8a6d3b"></i></div>
+      <div class="leg"><span><i class="dot" style="background:#3a7bd5"></i>dissolved</span><span><i class="dot" style="background:#5cf2c4"></i>biomass</span><span><i class="dot" style="background:#8a6d3b"></i>detritus</span></div>
+      <div class="stat" style="margin-top:6px"><span>Total</span><b id="s-total">0</b></div>
     </div>
+
+    <div class="card"><h2>Selected</h2><div id="inspect">click an animal to inspect</div></div>
 
     <div class="card">
       <h2>Controls</h2>
       <label class="ctrl">Mutation rate <input id="k-mut" type="range" min="0" max="100" value="28"></label>
-      <label class="ctrl">Sim speed <span class="v" id="spd-val">×3</span>
-        <input id="k-spd" type="range" min="1" max="40" value="3"></label>
-      <label class="ctrl">Day length <span class="v" id="day-val">3600</span>
-        <input id="k-day" type="range" min="800" max="8000" value="3600" step="100"></label>
+      <label class="ctrl">Sim speed <span class="v" id="spd-val">×3</span><input id="k-spd" type="range" min="1" max="40" value="3"></label>
+      <label class="ctrl">Day length <span class="v" id="day-val">3600</span><input id="k-day" type="range" min="800" max="8000" value="3600" step="100"></label>
     </div>
-
-    <div class="row">
-      <button id="b-pause">Pause</button>
-      <button id="b-reset">Reset sea</button>
-    </div>
-    <div class="row">
-      <button id="b-fit">Fit view</button>
-    </div>
+    <div class="row"><button id="b-pause">Pause</button><button id="b-reset">Reset sea</button></div>
+    <div class="row"><button id="b-fit">Fit view</button></div>
 
     <footer>
-      A closed sea: sunlight + dissolved nutrients feed <b>seaweed</b> &amp; drifting
-      <b>plankton</b>; <b>shrimp</b> graze them and the marine snow. Death &amp; waste
-      become <b>detritus</b>, decomposed back into nutrients. Nothing is created or
-      destroyed — only cycled. Behaviour is evolved instinct.<br><br>
-      scroll/pinch = zoom · drag = pan · click = inspect
+      One closed sea. Sunlight feeds seaweed &amp; plankton; every swimming animal
+      shares one body plan whose <b>size</b> &amp; <b>diet</b> genes decide what it is —
+      a small grazer, a fish, or an apex hunter. Bigger eats smaller. Evolution can
+      shift a lineage up or down the food chain; the silhouette morphs smoothly.
+      Nutrients are conserved &amp; recycled. Behaviour is evolved instinct.<br><br>
+      scroll/pinch=zoom · drag=pan · click=inspect · edges wrap
     </footer>
   </aside>
 </div>
@@ -102,465 +92,344 @@
 <script>
 "use strict";
 /* ════════════════════════════════════════════════════════════════════════
-   ABYSSAL v3 — Phase 1
-   A closed-loop sea: conserved nutrients flow sunlight→producers→shrimp→
-   detritus→nutrients. Day/night drives photosynthesis. Behaviour is an
-   evolved neural reflex; selection (eat or die) shapes it across generations.
+   ABYSSAL v3 — Phase 2 : the full food web on one continuous body plan.
    ════════════════════════════════════════════════════════════════════════ */
-
 const cv=document.getElementById('c'), ctx=cv.getContext('2d');
 let DPR=Math.min(2,window.devicePixelRatio||1);
 const W=2800, H=1900;
 let CW=0,CH=0;
 const cam={x:W/2,y:H/2,zoom:1,min:0.25,max:5};
-function resize(){
-  const r=cv.parentElement.getBoundingClientRect();
-  CW=r.width; CH=r.height; cv.width=CW*DPR; cv.height=CH*DPR;
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  cam.min=Math.min(CW/W,CH/H)*0.9; cam.zoom=clamp(cam.zoom,cam.min,cam.max);
-}
+function resize(){const r=cv.parentElement.getBoundingClientRect();CW=r.width;CH=r.height;cv.width=CW*DPR;cv.height=CH*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);cam.min=Math.min(CW/W,CH/H)*0.9;cam.zoom=clamp(cam.zoom,cam.min,cam.max);}
 const clampCam=()=>{cam.zoom=clamp(cam.zoom,cam.min,cam.max);cam.x=clamp(cam.x,0,W);cam.y=clamp(cam.y,0,H);};
 const s2w=(mx,my)=>({x:cam.x+(mx-CW/2)/cam.zoom,y:cam.y+(my-CH/2)/cam.zoom});
-
 const rnd=(a=1,b=0)=>b+Math.random()*(a-b);
 const clamp=(x,a,b)=>x<a?a:x>b?b:x;
 const lerp=(a,b,t)=>a+(b-a)*t;
 const TAU=Math.PI*2;
 window.addEventListener('resize',resize); resize();
 
-// ── neural reflex (shrimp brains) ───────────────────────────────────────────
-const N_IN=6, N_HID=8, N_OUT=3;
+// ── neural reflex ────────────────────────────────────────────────────────────
+const N_IN=7, N_HID=8, N_OUT=3;
 const N_W=N_IN*N_HID+N_HID+N_HID*N_OUT+N_OUT;
 function randBrain(){const w=new Float32Array(N_W);for(let i=0;i<N_W;i++)w[i]=rnd(1,-1);return w;}
-function think(w,inp,hid,out){
-  let k=0;
+function think(w,inp,hid,out){let k=0;
   for(let j=0;j<N_HID;j++){let s=0;for(let i=0;i<N_IN;i++)s+=inp[i]*w[k++];s+=w[k++];hid[j]=Math.tanh(s);}
-  for(let o=0;o<N_OUT;o++){let s=0;for(let j=0;j<N_HID;j++)s+=hid[j]*w[k++];s+=w[k++];out[o]=Math.tanh(s);}
-}
+  for(let o=0;o<N_OUT;o++){let s=0;for(let j=0;j<N_HID;j++)s+=hid[j]*w[k++];s+=w[k++];out[o]=Math.tanh(s);}}
 function mutBrain(w,rate){const n=new Float32Array(w);for(let i=0;i<N_W;i++)if(Math.random()<rate)n[i]=clamp(n[i]+rnd(0.4,-0.4),-3,3);return n;}
+const mg=(v,rate,amt=0.12)=>clamp(v+(Math.random()<rate?rnd(amt,-amt):0),0,1);
 
-// ── spatial hash ─────────────────────────────────────────────────────────────
-class Grid{
-  constructor(cell){this.cs=cell;this.m=new Map();}
-  clear(){this.m.clear();}
+class Grid{constructor(cell){this.cs=cell;this.m=new Map();}clear(){this.m.clear();}
   add(o){const k=((o.x/this.cs)|0)+','+((o.y/this.cs)|0);let a=this.m.get(k);if(!a){a=[];this.m.set(k,a);}a.push(o);}
-  near(x,y){const cx=(x/this.cs)|0,cy=(y/this.cs)|0,out=[];
-    for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){const a=this.m.get((cx+i)+','+(cy+j));if(a)for(const o of a)out.push(o);}
-    return out;}
-}
+  near(x,y){const cx=(x/this.cs)|0,cy=(y/this.cs)|0,out=[];for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){const a=this.m.get((cx+i)+','+(cy+j));if(a)for(const o of a)out.push(o);}return out;}}
 
-// ── kinds ────────────────────────────────────────────────────────────────────
-const WEED=0, PLANK=1, SHRIMP=2;
+const WEED=0, PLANK=1, FAUNA=2;
 let NEXT_LINE=1;
+
+// reproduction mass scales steeply with size → energy pyramid (big = rare)
+const reproMassOf=size=> lerp(32, 360, size*size);
 
 class Org{
   constructor(kind,x,y,opt={}){
     this.kind=kind; this.x=x; this.y=y; this.dead=false; this.age=0;
-    this.hue=opt.hue ?? (kind===WEED?rnd(150,110):kind===PLANK?rnd(170,120):rnd(40,18));
     this.gen=opt.gen||0; this.line=opt.line||NEXT_LINE++;
     this.vx=0; this.vy=0; this.a=rnd(TAU);
-    if(kind===WEED){ this.mass=opt.mass??rnd(34,20); this.rooted=true; this.sway=rnd(0.9,0.4); this.phase=rnd(TAU); this.len=rnd(34,18); }
-    else if(kind===PLANK){ this.mass=opt.mass??rnd(5,3); this.drift=rnd(0.25,0.08); this.dphase=rnd(TAU); }
-    else { // SHRIMP — mobile grazer/detritivore with an evolved brain
-      this.mass=opt.mass??rnd(34,24);
-      this.size=opt.size??rnd(0.6,0.3); this.speed=opt.speed??rnd(0.6,0.3); this.sense=opt.sense??rnd(0.6,0.3);
+    if(kind===WEED){ this.hue=opt.hue??rnd(150,110); this.mass=opt.mass??rnd(34,20); this.sway=rnd(0.9,0.4); this.phase=rnd(TAU); this.len=rnd(34,18); }
+    else if(kind===PLANK){ this.hue=opt.hue??rnd(170,120); this.mass=opt.mass??rnd(5,3); this.drift=rnd(0.25,0.08); this.dphase=rnd(TAU); }
+    else { // FAUNA — one continuous body plan: size & diet define everything
+      this.size=opt.size??rnd(0.25,0.05);
+      this.diet=opt.diet??rnd(0.2,0);
+      this.speed=opt.speed??rnd(0.6,0.3);
+      this.sense=opt.sense??rnd(0.6,0.3);
+      this.hue=opt.hue ?? (this.diet>0.5?rnd(30,0):rnd(150,70));
+      this.reproMass=reproMassOf(this.size);
+      this.mass=opt.mass ?? this.reproMass*0.5;
+      this.maxAge=opt.maxAge ?? (1200+this.size*5000+rnd(600));
       this.brain=opt.brain||randBrain();
-      this.maxAge=opt.maxAge ?? (1300+rnd(1000));   // natural lifespan (with variation)
       this.steerBias=0; this._h=new Float32Array(N_HID); this._o=new Float32Array(N_OUT); this._i=new Float32Array(N_IN);
     }
   }
-  get r(){ return this.kind===WEED?3+this.mass*0.16
-                : this.kind===PLANK?1.6+this.mass*0.25
-                : 3+this.size*5+this.mass*0.05; }
+  get r(){ if(this.kind===WEED) return 3+this.mass*0.16; if(this.kind===PLANK) return 1.6+this.mass*0.25;
+    return 3+this.size*18+clamp(this.mass/this.reproMass,0,1)*4; }
 }
 
-// ── world ────────────────────────────────────────────────────────────────────
 class World{
   constructor(){this.reset();}
   reset(){
     this.tick=0; this.gen=0; this.dayLen=3600; this.mutRate=0.28;
-    this.orgs=[]; this.detritus=[];
-    this.grid=new Grid(80);
-    // dissolved nutrient field (coarse, conserved)
+    this.orgs=[]; this.detritus=[]; this.grid=new Grid(90);
     this.ncs=70; this.ncols=Math.ceil(W/this.ncs)+1; this.nrows=Math.ceil(H/this.ncs)+1;
     this.diss=new Float32Array(this.ncols*this.nrows);
     for(let i=0;i<this.diss.length;i++) this.diss[i]=46+rnd(8);
-    // seaweed beds (rooted producers / refuges)
-    for(let b=0;b<18;b++){
-      const cx=rnd(W*0.9,W*0.1), cy=rnd(H*0.9,H*0.1), n=6+((Math.random()*7)|0);
-      for(let k=0;k<n;k++) this.orgs.push(new Org(WEED, cx+rnd(90,-90), cy+rnd(90,-90)));
-    }
-    // plankton (drifting producers + decomposers)
+    for(let b=0;b<24;b++){ const cx=rnd(W*0.9,W*0.1),cy=rnd(H*0.9,H*0.1),n=6+((Math.random()*7)|0);
+      for(let k=0;k<n;k++) this.orgs.push(new Org(WEED,cx+rnd(90,-90),cy+rnd(90,-90))); }
     for(let i=0;i<1400;i++) this.orgs.push(new Org(PLANK,rnd(W),rnd(H)));
-    // shrimp (grazers)
-    for(let i=0;i<240;i++) this.orgs.push(new Org(SHRIMP,rnd(W),rnd(H)));
+    // seed the pyramid directly: many grazers, some fish, a few apex
+    for(let i=0;i<460;i++) this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.22,0.05),diet:rnd(0.18,0)}));
+    for(let i=0;i<45;i++)  this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.5,0.3),diet:rnd(0.6,0.35)}));
+    for(let i=0;i<7;i++)   this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.85,0.62),diet:rnd(0.95,0.7)}));
   }
   nIdx(x,y){const c=clamp((x/this.ncs)|0,0,this.ncols-1),r=clamp((y/this.ncs)|0,0,this.nrows-1);return r*this.ncols+c;}
-  sun(){ const t=(this.tick%this.dayLen)/this.dayLen; return clamp(0.12+0.95*Math.max(0,Math.sin(t*TAU-Math.PI/2)*0.5+0.5)-0.0,0,1); }
-  addDiss(x,y,m){ this.diss[this.nIdx(x,y)]+=m; }
-  takeDiss(x,y,want){ const i=this.nIdx(x,y); const g=Math.min(want,this.diss[i]); this.diss[i]-=g; return g; }
-  addDetritus(x,y,m){ if(m<=0)return; this.detritus.push({x,y,m,vx:rnd(4,-4),vy:rnd(6,2)});
-    if(this.detritus.length>1600){ const e=this.detritus.shift(); this.addDiss(e.x,e.y,e.m); } }
+  sun(){const t=(this.tick%this.dayLen)/this.dayLen;return clamp(0.12+0.95*(Math.max(0,Math.sin(t*TAU-Math.PI/2))*0.5+0.5),0,1);}
+  addDiss(x,y,m){this.diss[this.nIdx(x,y)]+=m;}
+  takeDiss(x,y,want){const i=this.nIdx(x,y);const g=Math.min(want,this.diss[i]);this.diss[i]-=g;return g;}
+  addDetritus(x,y,m){if(m<=0)return;this.detritus.push({x,y,m,vx:rnd(4,-4),vy:rnd(6,2)});
+    if(this.detritus.length>1800){const e=this.detritus.shift();this.addDiss(e.x,e.y,e.m);}}
+  wrap(o){o.x=((o.x%W)+W)%W;o.y=((o.y%H)+H)%H;}
 
   step(){
-    this.tick++;
-    const sun=this.sun();
-    // build grids
-    this.grid.clear();
-    const foodGrid=new Grid(70), weedGrid=new Grid(70);
+    this.tick++; const sun=this.sun();
+    this.grid.clear(); const foodGrid=new Grid(70), weedGrid=new Grid(70), animGrid=new Grid(90);
     this.weedCount=0;
     for(const o of this.orgs){ this.grid.add(o);
       if(o.kind===WEED||o.kind===PLANK) foodGrid.add(o);
-      if(o.kind===WEED){ weedGrid.add(o); this.weedCount++; } }
+      if(o.kind===WEED){weedGrid.add(o);this.weedCount++;}
+      if(o.kind===FAUNA) animGrid.add(o); }
     const detGrid=new Grid(70); for(const d of this.detritus) detGrid.add(d);
-
-    const newborns=[];
-    // slow nutrient diffusion (every few ticks)
     if(this.tick%4===0) this.diffuse();
 
-    for(let i=this.orgs.length-1;i>=0;i--){
-      const o=this.orgs[i];
-      if(o.dead) continue;
-      o.age++;
-      if(o.kind===WEED) this.stepWeed(o,sun,newborns);
-      else if(o.kind===PLANK) this.stepPlank(o,sun,detGrid,newborns);
-      else this.stepShrimp(o,foodGrid,detGrid,weedGrid,newborns);
-    }
-    // detritus settle + slow decomposition back to dissolved
-    for(let i=this.detritus.length-1;i>=0;i--){
-      const d=this.detritus[i];
-      d.x+=d.vx*0.02; d.y+=d.vy*0.02; d.vy*=0.99; d.vx*=0.98;
-      d.x=((d.x%W)+W)%W;                 // wrap horizontally
-      if(d.y>H-2){d.y=H-2;d.vy=0;}       // marine snow settles on the floor
-      const dec=Math.min(d.m,0.012+d.m*0.004);
-      d.m-=dec; this.addDiss(d.x,d.y,dec);
-      if(d.m<=0.05){ this.addDiss(d.x,d.y,d.m); this.detritus.splice(i,1); } // return remainder, no leak
-    }
-    // remove dead → their mass becomes detritus
-    const alive=[];
-    for(const o of this.orgs){ if(o.dead){ this.addDetritus(o.x,o.y,o.mass); } else alive.push(o); }
-    this.orgs=alive.concat(newborns);
+    const nb=[];
+    for(let i=this.orgs.length-1;i>=0;i--){ const o=this.orgs[i]; if(o.dead) continue; o.age++;
+      if(o.kind===WEED) this.stepWeed(o,sun,nb);
+      else if(o.kind===PLANK) this.stepPlank(o,sun,detGrid,nb);
+      else this.stepFauna(o,foodGrid,detGrid,weedGrid,animGrid,nb); }
 
-    // immigration: surplus dissolved nutrient occasionally sprouts a plankton "spore"
-    if(this.tick%5===0){
-      const i=(Math.random()*this.diss.length)|0;
-      if(this.diss[i]>60){
-        const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
-        const m=this.takeDiss(cx,cy,4); if(m>2){ const p=new Org(PLANK,clamp(cx,4,W-4),clamp(cy,4,H-4),{mass:m}); this.orgs.push(p); }
-      }
+    for(let i=this.detritus.length-1;i>=0;i--){ const d=this.detritus[i];
+      d.x+=d.vx*0.02; d.y+=d.vy*0.02; d.vy*=0.99; d.vx*=0.98; d.x=((d.x%W)+W)%W; if(d.y>H-2){d.y=H-2;d.vy=0;}
+      const dec=Math.min(d.m,0.012+d.m*0.004); d.m-=dec; this.addDiss(d.x,d.y,dec);
+      if(d.m<=0.05){ this.addDiss(d.x,d.y,d.m); this.detritus.splice(i,1); } }
+
+    const alive=[]; for(const o of this.orgs){ if(o.dead) this.addDetritus(o.x,o.y,o.mass); else alive.push(o); }
+    this.orgs=alive.concat(nb);
+
+    // plankton spore from surplus dissolved
+    if(this.tick%5===0){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>60){
+      const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
+      const m=this.takeDiss(cx,cy,4); if(m>2) this.orgs.push(new Org(PLANK,clamp(cx,4,W-4),clamp(cy,4,H-4),{mass:m})); } }
+    // safety nets keep every trophic band from total extinction (2A)
+    if(this.tick%200===0) this.safetyNets();
+  }
+  safetyNets(){
+    let grazers=0, mids=0, apex=0;
+    for(const o of this.orgs) if(o.kind===FAUNA){ if(o.size<0.28)grazers++; else if(o.size<0.55)mids++; else apex++; }
+    // grazers assembled from plankton biomass (conserved)
+    if(grazers<80){
+      const planks=this.orgs.filter(o=>o.kind===PLANK&&!o.dead&&o.mass>0.5); let made=0,idx=0;
+      while(made<16&&idx<planks.length){ const seed=planks[idx]; idx+=17; if(!seed||seed.dead){continue;}
+        let m=0; for(const p of this.grid.near(seed.x,seed.y)){ if(p.kind===PLANK&&!p.dead&&p.mass>0){m+=p.mass;p.mass=0;p.dead=true;if(m>=26)break;} }
+        m+=this.takeDiss(seed.x,seed.y,Math.max(0,26-m));
+        if(m>12){ this.orgs.push(new Org(FAUNA,seed.x,seed.y,{size:rnd(0.18,0.05),diet:rnd(0.12,0),mass:m})); made++; } }
     }
-    // safety net: if shrimp nearly gone, a few "drift in" — each assembled from
-    // nearby plankton biomass + dissolved nutrient, so the total stays conserved.
-    if(this.tick%200===0){
-      let sh=0; for(const o of this.orgs) if(o.kind===SHRIMP) sh++;
-      if(sh<45){
-        const planks=this.orgs.filter(o=>o.kind===PLANK && !o.dead && o.mass>0.5);
-        let made=0, idx=0;
-        while(made<10 && idx<planks.length){
-          const seed=planks[idx]; idx+=23;
-          if(!seed||seed.dead){ continue; }
-          let m=0;
-          for(const p of this.grid.near(seed.x,seed.y)){
-            if(p.kind===PLANK && !p.dead && p.mass>0){ m+=p.mass; p.mass=0; p.dead=true; if(m>=26) break; }
-          }
-          m+=this.takeDiss(seed.x,seed.y, Math.max(0,26-m));   // top up from water
-          if(m>12){ this.orgs.push(new Org(SHRIMP,seed.x,seed.y,{mass:m})); made++; }
-        }
-      }
+    // mid fish re-derived from well-fed grazers (gene shift up, mass conserved)
+    if(mids<22){
+      const gs=this.orgs.filter(o=>o.kind===FAUNA&&o.size<0.28&&o.mass>o.reproMass*0.55).sort((a,b)=>b.mass-a.mass);
+      for(let n=0;n<Math.min(10,gs.length);n++){ const o=gs[n];
+        o.size=rnd(0.5,0.32); o.diet=rnd(0.65,0.4); o.reproMass=reproMassOf(o.size); o.hue=rnd(60,20); o.maxAge=1200+o.size*5000+rnd(600); }
+    }
+    // apex re-derived from well-fed mid animals (gene shift up, mass conserved)
+    if(apex<3){
+      const ms=this.orgs.filter(o=>o.kind===FAUNA&&o.size>=0.28&&o.size<0.6&&o.mass>o.reproMass*0.55).sort((a,b)=>b.mass-a.mass);
+      for(let n=0;n<Math.min(4,ms.length);n++){ const o=ms[n];
+        o.size=rnd(0.8,0.62); o.diet=rnd(0.92,0.75); o.reproMass=reproMassOf(o.size); o.hue=rnd(26,0); o.maxAge=1200+o.size*5000+rnd(600); }
     }
   }
-  diffuse(){
-    // conservative flux diffusion: each edge exchanges symmetric flux → total exactly preserved
-    const d=this.diss, c=this.ncols, r=this.nrows, out=new Float32Array(d.length), D=0.12;
-    for(let y=0;y<r;y++)for(let x=0;x<c;x++){
-      const i=y*c+x; let flux=0;
-      if(x>0)   flux+=d[i-1]-d[i];
-      if(x<c-1) flux+=d[i+1]-d[i];
-      if(y>0)   flux+=d[i-c]-d[i];
-      if(y<r-1) flux+=d[i+c]-d[i];
-      out[i]=d[i]+D*flux;
-    }
-    this.diss.set(out);
-  }
-  // ---- producers ----
+  diffuse(){ const d=this.diss,c=this.ncols,r=this.nrows,out=new Float32Array(d.length),D=0.12;
+    for(let y=0;y<r;y++)for(let x=0;x<c;x++){ const i=y*c+x; let f=0;
+      if(x>0)f+=d[i-1]-d[i]; if(x<c-1)f+=d[i+1]-d[i]; if(y>0)f+=d[i-c]-d[i]; if(y<r-1)f+=d[i+c]-d[i];
+      out[i]=d[i]+D*f; } this.diss.set(out); }
+
   stepWeed(o,sun,nb){
-    const want=0.6*sun;                       // modest demand so plankton get a share
-    o.mass += this.takeDiss(o.x,o.y,want);
-    o.mass -= 0.045;                          // respiration → back to water
-    this.addDiss(o.x,o.y,0.045);
-    if(o.mass>110){ this.addDetritus(o.x,o.y,o.mass-110); o.mass=110; }   // size cap
-    if(o.mass<=2.5){ o.dead=true; return; }   // only dies in prolonged darkness, not grazing
-    // spread into beds, but soft-capped so it never carpets the whole sea
-    if(o.mass>92 && this.weedCount<560 && this.orgs.length+nb.length<3200 && Math.random()<0.5){
-      o.mass*=0.5;
-      nb.push(new Org(WEED,o.x+rnd(70,-70),o.y+rnd(70,-70),{mass:o.mass,hue:(o.hue+rnd(8,-8)+360)%360,gen:o.gen+1,line:o.line}));
-      this.gen=Math.max(this.gen,o.gen+1);
-    }
-  }
+    o.mass+=this.takeDiss(o.x,o.y,0.6*sun); o.mass-=0.045; this.addDiss(o.x,o.y,0.045);
+    if(o.mass>110){this.addDetritus(o.x,o.y,o.mass-110);o.mass=110;}
+    if(o.mass<=2.5){o.dead=true;return;}
+    if(o.mass>92 && this.weedCount<560 && this.orgs.length+nb.length<3400 && Math.random()<0.5){ o.mass*=0.5;
+      nb.push(new Org(WEED,o.x+rnd(70,-70),o.y+rnd(70,-70),{mass:o.mass,hue:(o.hue+rnd(8,-8)+360)%360,gen:o.gen+1,line:o.line})); this.gen=Math.max(this.gen,o.gen+1);} }
   stepPlank(o,sun,detGrid,nb){
-    // drift gently (wrap around edges)
-    o.dphase+=0.02; o.x+=Math.cos(o.dphase)*o.drift + 0.06; o.y+=Math.sin(o.dphase*0.7)*o.drift;
-    o.x=((o.x%W)+W)%W; o.y=((o.y%H)+H)%H;
-    // photosynthesis
-    o.mass += this.takeDiss(o.x,o.y,0.5*sun);
-    // decomposer: nibble nearby detritus
-    for(const d of detGrid.near(o.x,o.y)){
-      const dx=d.x-o.x,dy=d.y-o.y;
-      if(dx*dx+dy*dy<36 && d.m>0){ const take=Math.min(d.m,0.4); d.m-=take; o.mass+=take*0.7; this.addDiss(o.x,o.y,take*0.3); break; }
-    }
-    o.mass-=0.045; this.addDiss(o.x,o.y,0.045);   // respiration
-    if(o.mass>16){ this.addDiss(o.x,o.y,o.mass-16); o.mass=16; }   // size cap
-    if(o.mass<=1.4){ o.dead=true; return; }
-    if(o.mass>11 && this.orgs.length+nb.length<3000){
-      o.mass*=0.5;
-      nb.push(new Org(PLANK,o.x+rnd(12,-12),o.y+rnd(12,-12),{mass:o.mass,hue:(o.hue+rnd(10,-10)+360)%360,gen:o.gen+1,line:o.line}));
-      this.gen=Math.max(this.gen,o.gen+1);
-    }
-  }
-  // ---- consumer: shrimp ----
-  stepShrimp(o,foodGrid,detGrid,weedGrid,nb){
-    if(o.age>o.maxAge){ o.dead=true; return; }       // die of old age → body becomes detritus
-    const sense=40+o.sense*120;
-    // find nearest food (plankton/weed) and nearest detritus
-    let fd=sense,fdx=0,fdy=0,food=null;
-    for(const f of foodGrid.near(o.x,o.y)){ const dx=f.x-o.x,dy=f.y-o.y,d=Math.hypot(dx,dy); if(d<fd){fd=d;fdx=dx;fdy=dy;food=f;} }
-    let dd=sense,ddx=0,ddy=0,det=null;
-    for(const d of detGrid.near(o.x,o.y)){ const dx=d.x-o.x,dy=d.y-o.y,ds=Math.hypot(dx,dy); if(ds<dd){dd=ds;ddx=dx;ddy=dy;det=d;} }
-    // prefer whichever is closer
-    let tx=fdx,ty=fdy,td=fd; if(dd<fd){tx=ddx;ty=ddy;td=dd;}
-    const ca=Math.cos(o.a),sa=Math.sin(o.a);
-    const I=o._i;
-    I[0]= td<sense?1-td/sense:0;
-    I[1]= td<sense?(tx*ca+ty*sa)/sense:0;
-    I[2]= td<sense?(-tx*sa+ty*ca)/sense:0;
-    I[3]= clamp(o.mass/60,0,1);
-    I[4]= 0;                                   // toroidal world → no walls to sense
-    I[5]= 1;                                   // bias input
-    think(o.brain,I,o._h,o._o);
-    const raw=o._o[0];
-    o.steerBias=o.steerBias*0.96+raw*0.04;
-    o.a+=(raw-o.steerBias)*0.3;
-    const thrust=(o._o[1]*0.5+0.5)*(0.05+o.speed*0.32);
-    o.vx+=Math.cos(o.a)*thrust; o.vy+=Math.sin(o.a)*thrust;
-    o.vx*=0.9; o.vy*=0.9; o.x+=o.vx; o.y+=o.vy;
-    o.x=((o.x%W)+W)%W; o.y=((o.y%H)+H)%H;       // wrap around the edges
-    // metabolism (respiration → water)
-    const sp=Math.hypot(o.vx,o.vy), met=0.05+o.size*0.05+o.speed*0.04+sp*0.03;
-    o.mass-=met; this.addDiss(o.x,o.y,met);
-    // graze plankton/weed (weed keeps a holdfast — grazed but not killed, it regrows)
-    if(food){ const dx=food.x-o.x,dy=food.y-o.y; if(dx*dx+dy*dy<(o.r+food.r+3)*(o.r+food.r+3)){
-      let take;
-      if(food.kind===WEED){ take=Math.min(Math.max(0,food.mass-7),5); }
-      else {
-        // plankton sheltered within a seaweed bed are a protected nursery → safe
-        let safe=false;
-        for(const wd of weedGrid.near(food.x,food.y)){ const ex=wd.x-food.x,ey=wd.y-food.y; if(ex*ex+ey*ey<55*55){ safe=true; break; } }
-        take=safe?0:food.mass;
-      }
-      if(take>0.2){
-        food.mass-=take; if(food.kind!==WEED && food.mass<=1.0) food.dead=true;
-        o.mass+=take*0.6; this.addDetritus(o.x,o.y,take*0.25); this.addDiss(o.x,o.y,take*0.15);
-      }
-    }}
-    // eat detritus (detritivore)
-    else if(det){ const dx=det.x-o.x,dy=det.y-o.y; if(dx*dx+dy*dy<(o.r+4)*(o.r+4) && det.m>0){
-      const take=Math.min(det.m,3); det.m-=take; o.mass+=take*0.6; this.addDiss(o.x,o.y,take*0.4);
-    }}
-    // excrete (poop) occasionally
-    if(o.age%140===0 && o.mass>14){ const e=o.mass*0.05; o.mass-=e; this.addDetritus(o.x,o.y,e); }
-    if(o.mass>80){ this.addDetritus(o.x,o.y,o.mass-80); o.mass=80; }   // hard size cap → no giants
-    if(o.mass<=5){ o.dead=true; return; }
-    // reproduce
-    if(o.mass>52 && this.orgs.length+nb.length<3000){
-      o.mass*=0.5;
-      const c=new Org(SHRIMP,o.x+rnd(12,-12),o.y+rnd(12,-12),{
-        mass:o.mass, brain:mutBrain(o.brain,this.mutRate),
-        size:clamp(o.size+(Math.random()<this.mutRate?rnd(0.12,-0.12):0),0,1),
-        speed:clamp(o.speed+(Math.random()<this.mutRate?rnd(0.12,-0.12):0),0,1),
-        sense:clamp(o.sense+(Math.random()<this.mutRate?rnd(0.12,-0.12):0),0,1),
-        hue:(o.hue+(Math.random()<this.mutRate?rnd(14,-14):0)+360)%360, gen:o.gen+1, line:o.line});
-      nb.push(c); this.gen=Math.max(this.gen,o.gen+1);
-    }
-  }
-  totals(){
-    let bio=0,det=0,diss=0,weed=0,plank=0,shrimp=0;
-    for(const o of this.orgs){ bio+=o.mass; if(o.kind===WEED)weed++; else if(o.kind===PLANK)plank++; else shrimp++; }
-    for(const d of this.detritus) det+=d.m;
-    for(let i=0;i<this.diss.length;i++) diss+=this.diss[i];
-    return {bio,det,diss,weed,plank,shrimp,total:bio+det+diss};
-  }
-}
+    o.dphase+=0.02; o.x+=Math.cos(o.dphase)*o.drift+0.06; o.y+=Math.sin(o.dphase*0.7)*o.drift; this.wrap(o);
+    o.mass+=this.takeDiss(o.x,o.y,0.5*sun);
+    for(const d of detGrid.near(o.x,o.y)){ const dx=d.x-o.x,dy=d.y-o.y; if(dx*dx+dy*dy<36&&d.m>0){const t=Math.min(d.m,0.4);d.m-=t;o.mass+=t*0.7;this.addDiss(o.x,o.y,t*0.3);break;} }
+    o.mass-=0.045; this.addDiss(o.x,o.y,0.045);
+    if(o.mass>16){this.addDiss(o.x,o.y,o.mass-16);o.mass=16;}
+    if(o.mass<=1.4){o.dead=true;return;}
+    if(o.mass>11 && this.orgs.length+nb.length<3400){ o.mass*=0.5;
+      nb.push(new Org(PLANK,o.x+rnd(12,-12),o.y+rnd(12,-12),{mass:o.mass,hue:(o.hue+rnd(10,-10)+360)%360,gen:o.gen+1,line:o.line})); this.gen=Math.max(this.gen,o.gen+1);} }
 
+  stepFauna(o,foodGrid,detGrid,weedGrid,animGrid,nb){
+    if(o.age>o.maxAge){o.dead=true;return;}
+    const sense=44+o.sense*150, S=sense;
+    const canPlants=o.diet<0.88, canMeat=o.diet>0.2;
+    const myR=o.r, full=o.mass>o.reproMass*0.95;
+    // nearest edible (plant/detritus if herbivore-ish; prey if carnivore-ish)
+    let ed=S,edx=0,edy=0,edT=null;            // edible target
+    if(canPlants){
+      for(const f of foodGrid.near(o.x,o.y)){ const dx=f.x-o.x,dy=f.y-o.y,d=Math.hypot(dx,dy); if(d<ed){ed=d;edx=dx;edy=dy;edT=f;} }
+      for(const d of detGrid.near(o.x,o.y)){ const dx=d.x-o.x,dy=d.y-o.y,ds=Math.hypot(dx,dy); if(ds<ed){ed=ds;edx=dx;edy=dy;edT=d;} }
+    }
+    let prey=null,pd=S,pdx=0,pdy=0, threat=S,tx=0,ty=0;
+    if(canMeat||true){ for(const a of animGrid.near(o.x,o.y)){ if(a===o||a.dead)continue;
+      const dx=a.x-o.x,dy=a.y-o.y,d=Math.hypot(dx,dy); if(d>S)continue;
+      if(canMeat && a.r<myR*0.7){ if(d<pd){pd=d;pdx=dx;pdy=dy;prey=a;} }
+      if(a.r>myR*1.4){ if(d<threat){threat=d;tx=dx;ty=dy;} } } }
+    // choose food target = nearest of edible vs prey (prefer prey if carnivore)
+    let fx=edx,fy=edy,fdist=ed;
+    if(prey && (pd<ed || o.diet>0.6)){ fx=pdx;fy=pdy;fdist=pd; }
+    const ca=Math.cos(o.a),sa=Math.sin(o.a), I=o._i;
+    I[0]= fdist<S?1-fdist/S:0; I[1]= fdist<S?(fx*ca+fy*sa)/S:0; I[2]= fdist<S?(-fx*sa+fy*ca)/S:0;
+    I[3]= threat<S?1-threat/S:0; I[4]= threat<S?(-tx*sa+ty*ca)/S:0;
+    I[5]= clamp(o.mass/o.reproMass,0,1); I[6]=1;
+    think(o.brain,I,o._h,o._o);
+    const raw=o._o[0]; o.steerBias=o.steerBias*0.96+raw*0.04; o.a+=(raw-o.steerBias)*0.3;
+    const thrust=(o._o[1]*0.5+0.5)*(0.04+o.speed*0.34)*lerp(0.95,1.5,o.size); // bigger = faster, so predators can catch prey
+    o.vx+=Math.cos(o.a)*thrust; o.vy+=Math.sin(o.a)*thrust; o.vx*=0.9; o.vy*=0.9; o.x+=o.vx; o.y+=o.vy; this.wrap(o);
+    // metabolism ∝ mass + motion (respiration → water)
+    const sp=Math.hypot(o.vx,o.vy), met=0.025+o.mass*0.0022+sp*0.03;
+    o.mass-=met; this.addDiss(o.x,o.y,met);
+    // eat plants/detritus
+    if(canPlants && edT && !edT.dead){ const dx=edT.x-o.x,dy=edT.y-o.y, rr=(myR+(edT.r||3)+3);
+      if(dx*dx+dy*dy<rr*rr){
+        if(edT.m!==undefined){ const t=Math.min(edT.m,3); edT.m-=t; o.mass+=t*0.6*(1-o.diet*0.7); this.addDiss(o.x,o.y,t*(1-0.6*(1-o.diet*0.7))); }
+        else { let take=edT.kind===WEED?Math.min(Math.max(0,edT.mass-7),5):edT.mass;
+          if(take>0.2){ edT.mass-=take; if(edT.kind!==WEED&&edT.mass<=1.0)edT.dead=true;
+            const g=take*0.6*(1-o.diet*0.7); o.mass+=g; this.addDetritus(o.x,o.y,(take-g)*0.6); this.addDiss(o.x,o.y,(take-g)*0.4); } } } }
+    // predation (bigger eats smaller; prey safe in a seaweed refuge; full hunters rest)
+    if(canMeat && prey && !prey.dead && !full){ const dx=prey.x-o.x,dy=prey.y-o.y, rr=myR+prey.r;
+      if(dx*dx+dy*dy<rr*rr){
+        let safe=false; if(prey.size<0.3){ for(const wd of weedGrid.near(prey.x,prey.y)){ const ex=wd.x-prey.x,ey=wd.y-prey.y; if(ex*ex+ey*ey<66*66){safe=true;break;} } }
+        if(!safe){ const M=prey.mass, g=M*(0.12+0.18*o.diet);
+          o.mass+=g; this.addDetritus(prey.x,prey.y,(M-g)*0.6); this.addDiss(prey.x,prey.y,(M-g)*0.4);
+          prey.mass=0; prey.dead=true; } } }
+    // excrete
+    if(o.age%150===0 && o.mass>o.reproMass*0.3){ const e=o.mass*0.04; o.mass-=e; this.addDetritus(o.x,o.y,e); }
+    const cap=o.reproMass*1.5; if(o.mass>cap){this.addDetritus(o.x,o.y,o.mass-cap);o.mass=cap;}
+    if(o.mass<=o.reproMass*0.12+1){o.dead=true;return;}
+    // reproduce
+    if(o.mass>o.reproMass && this.orgs.length+nb.length<3400){ o.mass*=0.5;
+      nb.push(new Org(FAUNA,o.x+rnd(14,-14),o.y+rnd(14,-14),{ mass:o.mass, brain:mutBrain(o.brain,this.mutRate),
+        size:mg(o.size,this.mutRate,0.07), diet:mg(o.diet,this.mutRate,0.1), speed:mg(o.speed,this.mutRate), sense:mg(o.sense,this.mutRate),
+        hue:(o.hue+(Math.random()<this.mutRate?rnd(14,-14):0)+360)%360, gen:o.gen+1, line:o.line }));
+      this.gen=Math.max(this.gen,o.gen+1); }
+  }
+  totals(){ let bio=0,det=0,diss=0,weed=0,plank=0,small=0,mid=0,big=0;
+    for(const o of this.orgs){ bio+=o.mass;
+      if(o.kind===WEED)weed++; else if(o.kind===PLANK)plank++;
+      else { if(o.size<0.28)small++; else if(o.size<0.55)mid++; else big++; } }
+    for(const d of this.detritus) det+=d.m; for(let i=0;i<this.diss.length;i++) diss+=this.diss[i];
+    return {bio,det,diss,weed,plank,small,mid,big,total:bio+det+diss}; }
+}
 let world=new World();
 
 // ── rendering ────────────────────────────────────────────────────────────────
 let selected=null;
 const skyDay=[12,38,52], skyNight=[3,7,18];
 function draw(){
-  const sun=world.sun();
-  const bg=skyDay.map((d,i)=>Math.round(lerp(skyNight[i],d,sun)));
+  const sun=world.sun(); const bg=skyDay.map((d,i)=>Math.round(lerp(skyNight[i],d,sun)));
   ctx.fillStyle=`rgb(${bg[0]},${bg[1]},${bg[2]})`; ctx.fillRect(0,0,CW,CH);
-  ctx.save();
-  ctx.translate(CW/2,CH/2); ctx.scale(cam.zoom,cam.zoom); ctx.translate(-cam.x,-cam.y);
-  const m=60/cam.zoom;
-  const vx0=cam.x-(CW/2)/cam.zoom-m, vx1=cam.x+(CW/2)/cam.zoom+m;
-  const vy0=cam.y-(CH/2)/cam.zoom-m, vy1=cam.y+(CH/2)/cam.zoom+m;
-
-  // floor depth gradient
-  const fg=ctx.createLinearGradient(0,0,0,H);
-  fg.addColorStop(0,`rgba(${bg[0]},${bg[1]},${bg[2]},1)`);
-  fg.addColorStop(1,'rgba(2,4,10,1)');
+  ctx.save(); ctx.translate(CW/2,CH/2); ctx.scale(cam.zoom,cam.zoom); ctx.translate(-cam.x,-cam.y);
+  const m=70/cam.zoom, vx0=cam.x-(CW/2)/cam.zoom-m, vx1=cam.x+(CW/2)/cam.zoom+m, vy0=cam.y-(CH/2)/cam.zoom-m, vy1=cam.y+(CH/2)/cam.zoom+m;
+  const fg=ctx.createLinearGradient(0,0,0,H); fg.addColorStop(0,`rgb(${bg[0]},${bg[1]},${bg[2]})`); fg.addColorStop(1,'rgb(2,4,10)');
   ctx.fillStyle=fg; ctx.fillRect(0,0,W,H);
-  // god rays (subtle, daytime)
-  if(sun>0.25){
-    ctx.globalAlpha=(sun-0.25)*0.16;
-    for(let i=0;i<6;i++){ const x=(i/6)*W+W*0.05; ctx.fillStyle='#bfe9ff';
-      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+160,0); ctx.lineTo(x+520,H); ctx.lineTo(x+360,H); ctx.closePath(); ctx.fill(); }
-    ctx.globalAlpha=1;
-  }
-
-  // dissolved nutrient haze (faint blue)
-  const cs=world.ncs;
-  const c0=Math.max(0,(vx0/cs)|0),c1=Math.min(world.ncols-1,(vx1/cs)|0);
-  const r0=Math.max(0,(vy0/cs)|0),r1=Math.min(world.nrows-1,(vy1/cs)|0);
-  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++){
-    const v=world.diss[r*world.ncols+c]; if(v>30){ ctx.fillStyle=`rgba(58,123,213,${Math.min(0.10,(v-30)*0.002)})`;
-      ctx.fillRect(c*cs,r*cs,cs,cs); }
-  }
-  // detritus (marine snow)
+  if(sun>0.25){ ctx.globalAlpha=(sun-0.25)*0.15; for(let i=0;i<6;i++){ const x=(i/6)*W+W*0.05; ctx.fillStyle='#bfe9ff';
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+160,0); ctx.lineTo(x+520,H); ctx.lineTo(x+360,H); ctx.closePath(); ctx.fill(); } ctx.globalAlpha=1; }
+  const cs=world.ncs, c0=Math.max(0,(vx0/cs)|0),c1=Math.min(world.ncols-1,(vx1/cs)|0),r0=Math.max(0,(vy0/cs)|0),r1=Math.min(world.nrows-1,(vy1/cs)|0);
+  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++){ const v=world.diss[r*world.ncols+c]; if(v>30){ ctx.fillStyle=`rgba(58,123,213,${Math.min(0.10,(v-30)*0.002)})`; ctx.fillRect(c*cs,r*cs,cs,cs); } }
   ctx.fillStyle='rgba(170,150,110,.5)';
   for(const d of world.detritus){ if(d.x<vx0||d.x>vx1||d.y<vy0||d.y>vy1)continue; ctx.beginPath(); ctx.arc(d.x,d.y,Math.min(3,1+d.m*0.15),0,TAU); ctx.fill(); }
-
   const t=performance.now()*0.001, night=1-sun;
-  for(const o of world.orgs){
-    if(o.x<vx0||o.x>vx1||o.y<vy0||o.y>vy1) continue;
-    if(o.kind===WEED) drawWeed(o,t,sun);
-    else if(o.kind===PLANK) drawPlank(o,night);
-    else drawShrimp(o,t);
-  }
+  // draw producers first, then animals (sorted small→big so big on top)
+  for(const o of world.orgs){ if(o.kind===FAUNA||o.x<vx0||o.x>vx1||o.y<vy0||o.y>vy1) continue;
+    if(o.kind===WEED) drawWeed(o,t,sun); else drawPlank(o,night); }
+  const fauna=world.orgs.filter(o=>o.kind===FAUNA&&o.x>=vx0&&o.x<=vx1&&o.y>=vy0&&o.y<=vy1).sort((a,b)=>a.size-b.size);
+  for(const o of fauna) drawFauna(o,t);
   if(selected){ ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=2/cam.zoom; ctx.setLineDash([4/cam.zoom,4/cam.zoom]);
     ctx.beginPath(); ctx.arc(selected.x,selected.y,selected.r+6,0,TAU); ctx.stroke(); ctx.setLineDash([]); }
-  ctx.restore();
-  drawMinimap();
+  ctx.restore(); drawMinimap();
 }
-function drawWeed(o,t,sun){
-  const L=30+sun*22;
-  ctx.strokeStyle=`hsl(${o.hue} 55% ${L}%)`; ctx.lineWidth=2.6/cam.zoom; ctx.lineCap='round';
-  const blades=3;
-  for(let b=0;b<blades;b++){
-    const base=o.x+(b-1)*o.r*0.5;
-    ctx.beginPath();
-    for(let i=0;i<=6;i++){ const u=i/6; const sway=Math.sin(t*o.sway*2+o.phase+u*2+b)*o.len*0.22*u;
-      const px=base+sway, py=o.y - u*o.len*(0.7+o.mass*0.01);
-      i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
-    ctx.stroke();
+function drawWeed(o,t,sun){ const L=30+sun*22; ctx.strokeStyle=`hsl(${o.hue} 55% ${L}%)`; ctx.lineWidth=2.6/cam.zoom; ctx.lineCap='round';
+  for(let b=0;b<3;b++){ const base=o.x+(b-1)*o.r*0.5; ctx.beginPath();
+    for(let i=0;i<=6;i++){ const u=i/6, sway=Math.sin(t*o.sway*2+o.phase+u*2+b)*o.len*0.22*u;
+      const px=base+sway, py=o.y-u*o.len*(0.7+o.mass*0.01); i?ctx.lineTo(px,py):ctx.moveTo(px,py); } ctx.stroke(); }
+  ctx.fillStyle=`hsl(${o.hue} 50% ${L-8}%)`; ctx.beginPath(); ctx.arc(o.x,o.y,o.r*0.5,0,TAU); ctx.fill(); }
+function drawPlank(o,night){ ctx.fillStyle=`hsla(${o.hue} 70% ${55+night*15}% / ${0.4+night*0.6})`; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,TAU); ctx.fill(); }
+function drawFauna(o,t){
+  const sp=Math.hypot(o.vx,o.vy), beat=Math.sin(t*(5+sp*5)+o.x*0.05), r=o.r, sz=o.size, carn=o.diet;
+  const L=46+clamp(o.mass/o.reproMass,0,1)*14;
+  ctx.save(); ctx.translate(o.x,o.y); ctx.rotate(o.a); ctx.lineJoin='round'; ctx.lineCap='round';
+  if(sz<0.26){ // 🦐 shrimp/grazer: segmented + antennae
+    const bl=r*2.4;
+    for(let i=0;i<4;i++){ const u=i/3, bx=bl*0.4-u*bl*0.9, by=Math.sin(u*3+beat)*r*0.25;
+      ctx.fillStyle=`hsl(${o.hue} 70% ${L-i*3}%)`; ctx.beginPath(); ctx.arc(bx,by,r*(0.9-u*0.45),0,TAU); ctx.fill(); }
+    ctx.fillStyle=`hsl(${o.hue} 65% ${L+6}%)`; ctx.beginPath(); ctx.moveTo(-bl*0.5,0); ctx.lineTo(-bl*0.72,-r*0.7); ctx.lineTo(-bl*0.72,r*0.7); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle=`hsla(${o.hue} 60% ${L}% / .7)`; ctx.lineWidth=1.1/cam.zoom;
+    for(const s of [-1,1]){ ctx.beginPath(); ctx.moveTo(bl*0.4,0); ctx.quadraticCurveTo(bl*0.9,s*r*0.5,bl*1.3+Math.sin(t*4+s)*2,s*r*0.9); ctx.stroke(); }
+    ctx.fillStyle='#0a0f17'; ctx.beginPath(); ctx.arc(bl*0.34,-r*0.3,Math.max(1,r*0.16),0,TAU); ctx.fill();
+  } else { // 🐟→🦈 fish to shark: sleeker & toothier with size+diet
+    const bL=r*1.95, bH=r*0.9*lerp(1,0.78,clamp((sz-0.3)/0.6,0,1)), sw=beat*r*0.9*lerp(1,0.6,sz);
+    const top=`hsl(${o.hue} 70% ${L+8}%)`, mid=`hsl(${o.hue} 70% ${L}%)`, sha=`hsl(${o.hue} 64% ${L-16}%)`, fin=`hsla(${o.hue} 65% ${L}% / .82)`;
+    ctx.fillStyle=fin; ctx.beginPath(); ctx.moveTo(-bL*0.55,0);
+    ctx.quadraticCurveTo(-bL*0.85,sw*0.5,-bL*1.05,sw-r*0.85); ctx.quadraticCurveTo(-bL*0.8,sw*0.5,-bL*0.78,sw*0.35);
+    ctx.quadraticCurveTo(-bL*0.8,sw*0.5,-bL*1.05,sw+r*0.85); ctx.quadraticCurveTo(-bL*0.85,sw*0.5,-bL*0.55,0); ctx.closePath(); ctx.fill();
+    const dh=r*(0.4+carn*0.9+sz*0.5); ctx.fillStyle=fin; ctx.beginPath();
+    ctx.moveTo(bL*0.12,-bH*0.55); ctx.quadraticCurveTo(-bL*0.1,-bH*0.6-dh,-bL*0.42,-bH*0.62); ctx.quadraticCurveTo(-bL*0.2,-bH*0.55,bL*0.12,-bH*0.55); ctx.closePath(); ctx.fill();
+    const snout=bL*(0.5+carn*0.22); const bg=ctx.createLinearGradient(0,-bH,0,bH); bg.addColorStop(0,sha); bg.addColorStop(0.5,mid); bg.addColorStop(1,top);
+    ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(snout,0);
+    ctx.bezierCurveTo(bL*0.45,-bH,-bL*0.1,-bH,-bL*0.5,-bH*0.28); ctx.bezierCurveTo(-bL*0.62,-bH*0.12,-bL*0.62,bH*0.12,-bL*0.5,bH*0.28);
+    ctx.bezierCurveTo(-bL*0.1,bH,bL*0.45,bH,snout,0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.14)'; ctx.beginPath(); ctx.moveTo(bL*0.3,-bH*0.5);
+    ctx.bezierCurveTo(bL*0,-bH*0.85,-bL*0.35,-bH*0.7,-bL*0.45,-bH*0.3); ctx.bezierCurveTo(-bL*0.2,-bH*0.55,bL*0.1,-bH*0.55,bL*0.3,-bH*0.5); ctx.closePath(); ctx.fill();
+    if(carn>0.5){ ctx.fillStyle='rgba(255,255,255,.9)'; for(let k=0;k<3;k++){ const x=snout-r*0.2-k*r*0.28;
+      ctx.beginPath(); ctx.moveTo(x,bH*0.06); ctx.lineTo(x-1.3,bH*0.06+r*0.28); ctx.lineTo(x+1.3,bH*0.06); ctx.closePath(); ctx.fill(); } }
+    const er=Math.max(1.2,r*0.14); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(bL*0.42,-bH*0.3,er,0,TAU); ctx.fill();
+    ctx.fillStyle='#0a0f17'; ctx.beginPath(); ctx.arc(bL*0.44,-bH*0.3,er*0.55,0,TAU); ctx.fill();
   }
-  ctx.fillStyle=`hsl(${o.hue} 50% ${L-8}%)`; ctx.beginPath(); ctx.arc(o.x,o.y,o.r*0.5,0,TAU); ctx.fill();
-}
-function drawPlank(o,night){
-  const glow=0.4+night*0.6;
-  ctx.fillStyle=`hsla(${o.hue} 70% ${55+night*15}% / ${glow})`;
-  ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,TAU); ctx.fill();
-}
-function drawShrimp(o,t){
-  const sp=Math.hypot(o.vx,o.vy), beat=Math.sin(t*(6+sp*6)+o.x*0.05);
-  const L=46+clamp(o.mass/60,0,1)*16, r=o.r;
-  ctx.save(); ctx.translate(o.x,o.y); ctx.rotate(o.a + beat*0.12);
-  // body segments
-  const seg=4, bl=r*2.4;
-  ctx.lineCap='round';
-  for(let i=0;i<seg;i++){
-    const u=i/(seg-1), bx=bl*0.4 - u*bl*0.9, by=Math.sin(u*3+beat)*r*0.25;
-    ctx.fillStyle=`hsl(${o.hue} 70% ${L-i*3}%)`;
-    ctx.beginPath(); ctx.arc(bx,by,r*(0.9-u*0.45),0,TAU); ctx.fill();
-  }
-  // tail fan
-  ctx.fillStyle=`hsl(${o.hue} 65% ${L+6}%)`;
-  ctx.beginPath(); ctx.moveTo(-bl*0.5,0); ctx.lineTo(-bl*0.72,-r*0.7); ctx.lineTo(-bl*0.72,r*0.7); ctx.closePath(); ctx.fill();
-  // antennae
-  ctx.strokeStyle=`hsla(${o.hue} 60% ${L}% / .7)`; ctx.lineWidth=1.1/cam.zoom;
-  for(const s of [-1,1]){ ctx.beginPath(); ctx.moveTo(bl*0.4,0);
-    ctx.quadraticCurveTo(bl*0.9, s*r*0.5, bl*1.3+Math.sin(t*4+s)*2, s*r*0.9); ctx.stroke(); }
-  // eye
-  ctx.fillStyle='#0a0f17'; ctx.beginPath(); ctx.arc(bl*0.34,-r*0.3,Math.max(1,r*0.16),0,TAU); ctx.fill();
   ctx.restore();
 }
-
 const MM={x:12,y:12,w:170};
 function mmRect(){return {x:MM.x,y:MM.y,w:MM.w,h:MM.w*H/W};}
-function drawMinimap(){
-  const {x,y,w,h}=mmRect(), sx=w/W, sy=h/H;
-  ctx.save();
+function drawMinimap(){ const {x,y,w,h}=mmRect(), sx=w/W, sy=h/H; ctx.save();
   ctx.fillStyle='rgba(6,10,16,.86)'; ctx.fillRect(x,y,w,h);
-  for(const o of world.orgs){
-    ctx.fillStyle = o.kind===SHRIMP?'#ffba6a':o.kind===WEED?'#3fae6a':`hsla(${o.hue} 70% 60% / .6)`;
-    const d=o.kind===SHRIMP?1.6:1;
-    ctx.fillRect(x+o.x*sx-d/2,y+o.y*sy-d/2,d,d);
-  }
+  for(const o of world.orgs){ let col,d=1; if(o.kind===WEED){col='#3fae6a';} else if(o.kind===PLANK){col=`hsla(${o.hue} 70% 60% / .5)`;}
+    else { d=o.size<0.28?1.3:o.size<0.55?2:3; col=o.size<0.28?'#ffd27a':o.size<0.55?'#ff9a5a':'#ff5a6a'; }
+    ctx.fillStyle=col; ctx.fillRect(x+o.x*sx-d/2,y+o.y*sy-d/2,d,d); }
   ctx.strokeStyle='rgba(92,242,196,.9)'; ctx.lineWidth=1;
   ctx.strokeRect(x+(cam.x-(CW/2)/cam.zoom)*sx,y+(cam.y-(CH/2)/cam.zoom)*sy,(CW/cam.zoom)*sx,(CH/cam.zoom)*sy);
-  ctx.strokeStyle='#1b2738'; ctx.strokeRect(x,y,w,h);
-  ctx.restore();
-}
+  ctx.strokeStyle='#1b2738'; ctx.strokeRect(x,y,w,h); ctx.restore(); }
 
-// ── HUD ──────────────────────────────────────────────────────────────────────
 const $=id=>document.getElementById(id);
-function updateHUD(){
-  const T=world.totals();
-  $('s-weed').textContent=T.weed; $('s-plank').textContent=T.plank; $('s-shrimp').textContent=T.shrimp;
-  $('s-det').textContent=world.detritus.length; $('s-gen').textContent=world.gen;
-  const tot=T.total||1;
-  $('p-diss').style.width=(T.diss/tot*100)+'%';
-  $('p-bio').style.width=(T.bio/tot*100)+'%';
-  $('p-det').style.width=(T.det/tot*100)+'%';
+function updateHUD(){ const T=world.totals();
+  $('s-weed').textContent=T.weed; $('s-plank').textContent=T.plank;
+  $('s-small').textContent=T.small; $('s-mid').textContent=T.mid; $('s-big').textContent=T.big; $('s-gen').textContent=world.gen;
+  const tot=T.total||1; $('p-diss').style.width=(T.diss/tot*100)+'%'; $('p-bio').style.width=(T.bio/tot*100)+'%'; $('p-det').style.width=(T.det/tot*100)+'%';
   $('s-total').textContent=Math.round(T.total).toLocaleString();
-  // clock
-  const frac=(world.tick%world.dayLen)/world.dayLen;
-  const hh=((frac*24)|0), mm=(((frac*24)%1)*60|0);
-  const sun=world.sun();
-  const icon=sun>0.6?'☀️':sun>0.25?(frac<0.5?'🌅':'🌇'):'🌙';
-  $('clock').textContent=`${icon} ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  // pyramid widths
+  const rows=[[T.plank,'#7ad0ff'],[T.small,'#ffd27a'],[T.mid,'#ff9a5a'],[T.big,'#ff5a6a']];
+  const mx=Math.max(1,...rows.map(r=>r[0]));
+  $('pyr').innerHTML=rows.map(([v,c])=>`<div style="width:${Math.max(8,v/mx*100)}%;background:${c}">${v}</div>`).reverse().join('');
+  const frac=(world.tick%world.dayLen)/world.dayLen, hh=((frac*24)|0), mm=(((frac*24)%1)*60|0), sun=world.sun();
+  $('clock').textContent=`${sun>0.6?'☀️':sun>0.25?(frac<0.5?'🌅':'🌇'):'🌙'} ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  if(selected && !selected.dead){ const o=selected;
+    const role=o.size<0.28?'🦐 grazer':o.size<0.55?'🐟 fish':'🦈 apex';
+    $('inspect').innerHTML=`<b>${role}</b> · gen ${o.gen}<br>size ${(o.size*100|0)} · diet ${(o.diet*100|0)}% carn<br>mass ${o.mass|0}/${o.reproMass|0} · age ${o.age}/${o.maxAge|0}`;
+  }
 }
-
-// ── interaction (zoom/pan/select + touch) ────────────────────────────────────
-function pickAt(wx,wy){ let best=null,bd=1e9; for(const o of world.orgs){ const d=Math.hypot(o.x-wx,o.y-wy); if(d<Math.max(14,o.r+6)&&d<bd){bd=d;best=o;} } return best; }
+function pickAt(wx,wy){ let best=null,bd=1e9; for(const o of world.orgs){ if(o.kind!==FAUNA)continue; const d=Math.hypot(o.x-wx,o.y-wy); if(d<Math.max(16,o.r+6)&&d<bd){bd=d;best=o;} } return best; }
 function inMM(mx,my){const {x,y,w,h}=mmRect();return mx>=x&&mx<=x+w&&my>=y&&my<=y+h;}
 function mmTo(mx,my){const {x,y,w,h}=mmRect();return {x:(mx-x)/w*W,y:(my-y)/h*H};}
 let drag=null;
-cv.addEventListener('mousedown',e=>{const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
-  if(inMM(mx,my)){const p=mmTo(mx,my);cam.x=p.x;cam.y=p.y;clampCam();drag={mm:true};return;}
-  drag={mm:false,sx:mx,sy:my,cx:cam.x,cy:cam.y,moved:0};});
-window.addEventListener('mousemove',e=>{if(!drag)return;const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
-  if(drag.mm){const p=mmTo(mx,my);cam.x=p.x;cam.y=p.y;clampCam();return;}
-  const dx=mx-drag.sx,dy=my-drag.sy;drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));
-  cam.x=drag.cx-dx/cam.zoom;cam.y=drag.cy-dy/cam.zoom;clampCam();});
-window.addEventListener('mouseup',e=>{if(drag&&!drag.mm&&drag.moved<5){const r=cv.getBoundingClientRect();
-  const p=s2w(e.clientX-r.left,e.clientY-r.top);selected=pickAt(p.x,p.y);}drag=null;});
-cv.addEventListener('wheel',e=>{e.preventDefault();const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
-  const b=s2w(mx,my);cam.zoom=clamp(cam.zoom*Math.exp(-e.deltaY*(e.ctrlKey?0.012:0.0018)),cam.min,cam.max);
-  const a=s2w(mx,my);cam.x+=b.x-a.x;cam.y+=b.y-a.y;clampCam();},{passive:false});
+cv.addEventListener('mousedown',e=>{const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top; if(inMM(mx,my)){const p=mmTo(mx,my);cam.x=p.x;cam.y=p.y;clampCam();drag={mm:true};return;} drag={mm:false,sx:mx,sy:my,cx:cam.x,cy:cam.y,moved:0};});
+window.addEventListener('mousemove',e=>{if(!drag)return;const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top; if(drag.mm){const p=mmTo(mx,my);cam.x=p.x;cam.y=p.y;clampCam();return;} const dx=mx-drag.sx,dy=my-drag.sy;drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));cam.x=drag.cx-dx/cam.zoom;cam.y=drag.cy-dy/cam.zoom;clampCam();});
+window.addEventListener('mouseup',e=>{if(drag&&!drag.mm&&drag.moved<5){const r=cv.getBoundingClientRect();const p=s2w(e.clientX-r.left,e.clientY-r.top);selected=pickAt(p.x,p.y);}drag=null;});
+cv.addEventListener('wheel',e=>{e.preventDefault();const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;const b=s2w(mx,my);cam.zoom=clamp(cam.zoom*Math.exp(-e.deltaY*(e.ctrlKey?0.012:0.0018)),cam.min,cam.max);const a=s2w(mx,my);cam.x+=b.x-a.x;cam.y+=b.y-a.y;clampCam();},{passive:false});
 let pinch=null; const txy=t=>{const r=cv.getBoundingClientRect();return{x:t.clientX-r.left,y:t.clientY-r.top};};
 cv.addEventListener('touchstart',e=>{if(e.touches.length===1){const p=txy(e.touches[0]);drag={mm:inMM(p.x,p.y),sx:p.x,sy:p.y,cx:cam.x,cy:cam.y,moved:0,t:performance.now()};if(drag.mm){const w=mmTo(p.x,p.y);cam.x=w.x;cam.y=w.y;clampCam();}}else if(e.touches.length>=2){drag=null;const a=txy(e.touches[0]),b=txy(e.touches[1]);pinch={d:Math.hypot(a.x-b.x,a.y-b.y),mx:(a.x+b.x)/2,my:(a.y+b.y)/2};}},{passive:false});
 cv.addEventListener('touchmove',e=>{e.preventDefault();if(e.touches.length>=2&&pinch){const a=txy(e.touches[0]),b=txy(e.touches[1]);const mx=(a.x+b.x)/2,my=(a.y+b.y)/2,d=Math.hypot(a.x-b.x,a.y-b.y)||1;const bf=s2w(mx,my);cam.zoom=clamp(cam.zoom*(d/pinch.d),cam.min,cam.max);const af=s2w(mx,my);cam.x+=bf.x-af.x;cam.y+=bf.y-af.y;cam.x-=(mx-pinch.mx)/cam.zoom;cam.y-=(my-pinch.my)/cam.zoom;clampCam();pinch.d=d;pinch.mx=mx;pinch.my=my;}else if(e.touches.length===1&&drag){const p=txy(e.touches[0]);if(drag.mm){const w=mmTo(p.x,p.y);cam.x=w.x;cam.y=w.y;clampCam();return;}const dx=p.x-drag.sx,dy=p.y-drag.sy;drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));cam.x=drag.cx-dx/cam.zoom;cam.y=drag.cy-dy/cam.zoom;clampCam();}},{passive:false});
 cv.addEventListener('touchend',e=>{if(drag&&!drag.mm&&drag.moved<6&&performance.now()-drag.t<300){const p=s2w(drag.sx,drag.sy);selected=pickAt(p.x,p.y);}if(e.touches.length<2)pinch=null;if(e.touches.length===0)drag=null;},{passive:false});
-
 $('k-mut').addEventListener('input',e=>world.mutRate=e.target.value/100);
-let simSpeed=3;
-$('k-spd').addEventListener('input',e=>{simSpeed=+e.target.value;$('spd-val').textContent='×'+simSpeed;});
+let simSpeed=3; $('k-spd').addEventListener('input',e=>{simSpeed=+e.target.value;$('spd-val').textContent='×'+simSpeed;});
 $('k-day').addEventListener('input',e=>{world.dayLen=+e.target.value;$('day-val').textContent=e.target.value;});
-let paused=false;
-$('b-pause').addEventListener('click',e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause';});
+let paused=false; $('b-pause').addEventListener('click',e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause';});
 $('b-reset').addEventListener('click',()=>{world=new World();world.dayLen=+$('k-day').value;world.mutRate=+$('k-mut').value/100;selected=null;});
 $('b-fit').addEventListener('click',()=>{cam.zoom=cam.min;cam.x=W/2;cam.y=H/2;});
-
-// ── main loop ────────────────────────────────────────────────────────────────
 let frame=0;
-function loop(){
-  if(!paused){ for(let i=0;i<simSpeed;i++) world.step(); }
-  draw(); frame++;
-  if(frame%4===0) updateHUD();
-  requestAnimationFrame(loop);
-}
+function loop(){ if(!paused){ for(let i=0;i<simSpeed;i++) world.step(); } draw(); frame++; if(frame%4===0) updateHUD(); requestAnimationFrame(loop); }
 requestAnimationFrame(loop); updateHUD();
 </script>
 </body>
