@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Primordium · one ancestor, many fates</title>
+<style>
+  :root{
+    --bg:#070a0f; --panel:#0d131c; --ink:#e7eef7; --dim:#8aa0b8;
+    --accent:#5cf2c4; --warn:#ff7a8a; --gold:#ffd27a; --blue:#7aa2ff;
+    --line:#1b2738;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:13px/1.45 ui-monospace,"SF Mono",Menlo,Consolas,monospace;overflow:hidden}
+  #wrap{display:flex;height:100%}
+  #stage{position:relative;flex:1;min-width:0}
+  canvas{display:block;width:100%;height:100%}
+  #side{width:312px;background:linear-gradient(180deg,#0d131c,#0a0f17);
+    border-left:1px solid var(--line);padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
+  h1{font-size:15px;letter-spacing:.18em;margin:0;color:var(--accent);text-transform:uppercase}
+  .sub{color:var(--dim);font-size:11px;margin-top:-8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .card h2{margin:0 0 8px;font-size:10px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;font-weight:600}
+  .stat{display:flex;justify-content:space-between;margin:3px 0}
+  .stat b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .stat span{color:var(--dim)}
+  button{background:#14203044;color:var(--ink);border:1px solid var(--line);
+    border-radius:7px;padding:7px 9px;font:inherit;cursor:pointer;transition:.15s;flex:1}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  .row{display:flex;gap:6px}
+  label.ctrl{display:flex;flex-direction:column;gap:4px;color:var(--dim);font-size:11px}
+  label.ctrl .v{color:var(--ink)}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  .spark{height:46px;width:100%}
+  .legend{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;color:var(--dim);font-size:11px;margin:4px 0 0}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:3px}
+  #inspect{font-size:11px;color:var(--dim);min-height:54px}
+  #inspect b{color:var(--accent)}
+  .bar{height:5px;border-radius:3px;background:#16202e;margin-top:3px;overflow:hidden}
+  .bar>i{display:block;height:100%;border-radius:3px}
+  .tag{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-radius:20px;color:var(--dim);font-size:10px;margin:1px 2px 1px 0}
+  footer{color:#43566b;font-size:10px;margin-top:auto;line-height:1.6}
+  a{color:var(--accent);text-decoration:none}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage"><canvas id="c"></canvas></div>
+  <aside id="side">
+    <div>
+      <h1>Primordium</h1>
+      <div class="sub">one common ancestor · open-ended evolution</div>
+    </div>
+
+    <div class="card">
+      <h2>World</h2>
+      <div class="stat"><span>Generation peak</span><b id="s-gen">0</b></div>
+      <div class="stat"><span>Population</span><b id="s-pop">0</b></div>
+      <div class="stat"><span>Species (colour clusters)</span><b id="s-species">1</b></div>
+      <div class="stat"><span>Carnivores</span><b id="s-carn">0%</b></div>
+      <div class="stat"><span>Plant food</span><b id="s-food">0</b></div>
+      <div class="stat"><span>Births / deaths</span><b id="s-bd">0 / 0</b></div>
+      <div class="stat"><span>Matings · kills</span><b id="s-mk">0 · 0</b></div>
+    </div>
+
+    <div class="card">
+      <h2>Population mean traits</h2>
+      <canvas id="spark" class="spark"></canvas>
+      <div class="legend">
+        <span><i class="dot" style="background:#5cf2c4"></i>speed</span>
+        <span><i class="dot" style="background:#ffd27a"></i>size</span>
+        <span><i class="dot" style="background:#7aa2ff"></i>sense</span>
+        <span><i class="dot" style="background:#ff7a8a"></i>carnivory</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Selected organism</h2>
+      <div id="inspect">click an organism to inspect its brain, genes &amp; role</div>
+    </div>
+
+    <div class="card">
+      <h2>Pressures</h2>
+      <label class="ctrl">Food abundance <input id="k-food" type="range" min="0" max="100" value="55"></label>
+      <label class="ctrl">Mutation rate <input id="k-mut" type="range" min="0" max="100" value="30"></label>
+      <label class="ctrl">Sim speed <span class="v" id="spd-val">×3</span>
+        <input id="k-spd" type="range" min="1" max="40" value="3"></label>
+      <label class="ctrl"><input id="k-phero" type="checkbox" checked style="width:auto;display:inline"> show pheromones</label>
+    </div>
+
+    <div class="row">
+      <button id="b-pause">Pause</button>
+      <button id="b-cull">Cataclysm</button>
+      <button id="b-reset">New ancestor</button>
+    </div>
+
+    <footer>
+      Everything descends from a <b style="color:#8aa0b8">single ancestor</b>.
+      Bodies carry genes (speed, size, sense, <i>diet</i>, colour) wiring a small
+      neural net. Big organisms can <b style="color:#ff7a8a">eat</b> smaller ones;
+      mating only happens between <b style="color:#7aa2ff">similar colours</b>, so
+      lineages split into species; juveniles <b>grow</b> with age; brains can emit
+      &amp; smell <b style="color:#7aa2ff">pheromones</b>. No behaviour is scripted.
+      <br><br>One file, no dependencies.
+    </footer>
+  </aside>
+</div>
+
+<script>
+"use strict";
+/* ──────────────────────────────────────────────────────────────────────────
+   PRIMORDIUM v2 — open-ended artificial life.
+   One ancestor → predation, speciation, growth, chemical signalling.
+   Sensors → evolved neural net → actuators. Selection is implicit.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let W=0,H=0,DPR=Math.min(2,window.devicePixelRatio||1);
+function resize(){
+  const r = cv.parentElement.getBoundingClientRect();
+  W=r.width; H=r.height;
+  cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize); resize();
+
+const rnd=(a=1,b=0)=>b+Math.random()*(a-b);
+const clamp=(x,a,b)=>x<a?a:x>b?b:x;
+const TAU=Math.PI*2;
+const hueDist=(a,b)=>{let d=Math.abs(a-b)%360; return d>180?360-d:d;};
+
+// ── Neural network ──────────────────────────────────────────────────────────
+// 10 sensors → 10 hidden → 3 actuators, tanh. Genome = flat weight vector.
+const N_IN=10, N_HID=10, N_OUT=3;
+const N_W = N_IN*N_HID + N_HID + N_HID*N_OUT + N_OUT;   // weights + biases = 143
+
+function randomBrain(){
+  const w=new Float32Array(N_W);
+  for(let i=0;i<N_W;i++) w[i]=rnd(1,-1);
+  return w;
+}
+function think(w, inp, hidBuf, outBuf){
+  let k=0;
+  for(let j=0;j<N_HID;j++){
+    let s=0;
+    for(let i=0;i<N_IN;i++) s+=inp[i]*w[k++];
+    s+=w[k++];
+    hidBuf[j]=Math.tanh(s);
+  }
+  for(let o=0;o<N_OUT;o++){
+    let s=0;
+    for(let j=0;j<N_HID;j++) s+=hidBuf[j]*w[k++];
+    s+=w[k++];
+    outBuf[o]=Math.tanh(s);
+  }
+}
+
+// ── Genome ───────────────────────────────────────────────────────────────────
+function ancestorGenome(){
+  // a viable, mostly-herbivorous founder so the world can bootstrap
+  return {
+    speedGene:0.40, sizeGene:0.42, senseGene:0.45, dietGene:0.12,
+    hue:rnd(360), brain:randomBrain(),
+  };
+}
+function randomGenome(){
+  return { speedGene:rnd(1), sizeGene:rnd(1), senseGene:rnd(1),
+           dietGene:rnd(1), hue:rnd(360), brain:randomBrain() };
+}
+function mutate(g, rate){
+  const m=rate;
+  const j=(v)=> clamp(v + (Math.random()<m? rnd(0.22,-0.22):0), 0, 1);
+  const ng={
+    speedGene:j(g.speedGene), sizeGene:j(g.sizeGene),
+    senseGene:j(g.senseGene), dietGene:j(g.dietGene),
+    hue:(g.hue + (Math.random()<m? rnd(34,-34):0) + 360)%360,
+    brain:new Float32Array(g.brain),
+  };
+  for(let i=0;i<N_W;i++) if(Math.random()<m) ng.brain[i]=clamp(ng.brain[i]+rnd(0.4,-0.4),-3,3);
+  return ng;
+}
+// sexual reproduction: fuse two genomes into ONE child
+function crossover(a,b){
+  const brain=new Float32Array(N_W);
+  for(let i=0;i<N_W;i++) brain[i]= Math.random()<0.5 ? a.brain[i] : b.brain[i];
+  const ax=Math.cos(a.hue/180*Math.PI)+Math.cos(b.hue/180*Math.PI);
+  const ay=Math.sin(a.hue/180*Math.PI)+Math.sin(b.hue/180*Math.PI);
+  return {
+    speedGene:(a.speedGene+b.speedGene)/2,
+    sizeGene:(a.sizeGene+b.sizeGene)/2,
+    senseGene:(a.senseGene+b.senseGene)/2,
+    dietGene:(a.dietGene+b.dietGene)/2,
+    hue:(Math.atan2(ay,ax)*180/Math.PI+360)%360,
+    brain,
+  };
+}
+
+// ── Organism ──────────────────────────────────────────────────────────────────
+let NEXT_LINE=1;
+const MAX_E=260, MATE_HUE=34, REPRO_E=220;
+class Org{
+  constructor(g,x,y,gen,line){
+    this.g=g; this.x=x; this.y=y;
+    this.a=rnd(TAU); this.vx=0; this.vy=0;
+    this.energy=130; this.age=0; this.dead=false;
+    this.gen=gen||0; this.line=line||NEXT_LINE++;
+    this.matureR = 4 + g.sizeGene*9;            // adult radius 4..13
+    this.maxThrust = 0.05 + g.speedGene*0.45;
+    this.sense = 30 + g.senseGene*140;
+    this.metab = 0.04 + g.sizeGene*0.10 + g.speedGene*0.08 + g.dietGene*0.03;
+    this.r = this.matureR*0.45;                 // born juvenile, grows up
+    this._hid=new Float32Array(N_HID);
+    this._out=new Float32Array(N_OUT);
+    this._in=new Float32Array(N_IN);
+  }
+  get carniv(){ return this.g.dietGene; }
+  step(world){
+    if(this.dead) return false;
+    // grow toward adult size with age
+    this.r = this.matureR*(0.45 + 0.55*Math.min(1,this.age/280));
+
+    // ---- sense nearest plant food ----
+    let fd=this.sense, fdx=0, fdy=0, food=null;
+    for(const f of world.foodGrid.near(this.x,this.y)){
+      const dx=f.x-this.x, dy=f.y-this.y, d=Math.hypot(dx,dy);
+      if(d<fd){fd=d;fdx=dx;fdy=dy;food=f;}
+    }
+    // ---- sense nearest threat (bigger) & nearest prey (smaller) ----
+    let td=this.sense, tdx=0,tdy=0;
+    let pd=this.sense, pdx=0,pdy=0, prey=null;
+    for(const o of world.orgGrid.near(this.x,this.y)){
+      if(o===this||o.dead) continue;
+      const dx=o.x-this.x, dy=o.y-this.y, d=Math.hypot(dx,dy);
+      if(d>this.sense) continue;
+      if(o.r > this.r*1.15){ if(d<td){td=d;tdx=dx;tdy=dy;} }
+      else if(o.r < this.r*0.87){ if(d<pd){pd=d;pdx=dx;pdy=dy;prey=o;} }
+      // ---- predation: contact with a smaller organism ----
+      if(o.r < this.r*0.82 && d < this.r){
+        const gain=(o.energy*0.55 + o.r*2 + 12)*(0.25 + 0.75*this.g.dietGene);
+        this.energy=Math.min(MAX_E,this.energy+gain);
+        o.dead=true; world.kills++;
+      }
+    }
+    const ca=Math.cos(this.a), sa=Math.sin(this.a);
+    const side=(dx,dy)=> (-dx*sa+dy*ca);     // +right / -left relative to heading
+    const fwd =(dx,dy)=> ( dx*ca+dy*sa);
+    const S=this.sense, I=this._in;
+    I[0]= food? 1-fd/S : 0;
+    I[1]= food? fwd(fdx,fdy)/S : 0;
+    I[2]= food? side(fdx,fdy)/S : 0;
+    I[3]= td<S? 1-td/S : 0;                   // threat proximity
+    I[4]= td<S? side(tdx,tdy)/S : 0;          // threat side
+    I[5]= pd<S? 1-pd/S : 0;                   // prey proximity
+    I[6]= pd<S? side(pdx,pdy)/S : 0;          // prey side
+    I[7]= clamp(this.energy/MAX_E,0,1);       // fullness
+    const wall=Math.min(this.x,this.y,W-this.x,H-this.y);
+    I[8]= 1-clamp(wall/S,0,1);                // wall
+    I[9]= clamp(world.sensePhero(this.x,this.y),0,1); // chemical signal
+
+    think(this.g.brain,I,this._hid,this._out);
+    const turn=this._out[0]*0.34;
+    const thrust=(this._out[1]*0.5+0.5)*this.maxThrust;
+    this.a+=turn;
+    this.vx+=Math.cos(this.a)*thrust;
+    this.vy+=Math.sin(this.a)*thrust;
+    this.vx*=0.9; this.vy*=0.9;
+    this.x+=this.vx; this.y+=this.vy;
+
+    if(this.x<this.r){this.x=this.r;this.vx*=-0.5;}
+    if(this.y<this.r){this.y=this.r;this.vy*=-0.5;}
+    if(this.x>W-this.r){this.x=W-this.r;this.vx*=-0.5;}
+    if(this.y>H-this.r){this.y=H-this.r;this.vy*=-0.5;}
+
+    // emit pheromone (3rd actuator finally wired up)
+    if(this._out[2]>0.25){ world.depositPhero(this.x,this.y,this._out[2]*0.6); this.energy-=0.03; }
+
+    const sp=Math.hypot(this.vx,this.vy);
+    this.energy -= this.metab + sp*0.05;
+    this.age++;
+
+    // eat plant food (carnivores digest it poorly)
+    if(food){
+      const dx=food.x-this.x, dy=food.y-this.y;
+      if(dx*dx+dy*dy < (this.r+3)*(this.r+3)){
+        this.energy=Math.min(MAX_E,this.energy+food.e*(1-0.78*this.g.dietGene));
+        world.eat(food);
+      }
+    }
+    if(this.energy<=0){ this.dead=true; return false; }
+    return true;
+  }
+  reproduce(world){           // asexual fallback
+    this.energy*=0.5;
+    const ng=mutate(this.g, world.mutationRate);
+    const c=new Org(ng,this.x+rnd(14,-14),this.y+rnd(14,-14),this.gen+1,this.line);
+    c.energy=this.energy*0.9; return c;
+  }
+  mateWith(p,world){          // sexual: two similar organisms fuse into one
+    this.energy*=0.6; p.energy*=0.6;
+    const ng=mutate(crossover(this.g,p.g), world.mutationRate);
+    const c=new Org(ng,(this.x+p.x)/2+rnd(10,-10),(this.y+p.y)/2+rnd(10,-10),
+                    Math.max(this.gen,p.gen)+1,this.line);
+    c.energy=(this.energy+p.energy)/2*0.8; return c;
+  }
+}
+
+// ── Spatial hash ──────────────────────────────────────────────────────────────
+class Grid{
+  constructor(cell){this.cs=cell;this.map=new Map();}
+  clear(){this.map.clear();}
+  add(o){const k=((o.x/this.cs)|0)+','+((o.y/this.cs)|0);
+    let a=this.map.get(k); if(!a){a=[];this.map.set(k,a);} a.push(o);}
+  near(x,y){
+    const cx=(x/this.cs)|0, cy=(y/this.cs)|0, out=[];
+    for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){
+      const a=this.map.get((cx+i)+','+(cy+j)); if(a) for(const o of a) out.push(o);
+    }
+    return out;
+  }
+}
+
+// ── World ─────────────────────────────────────────────────────────────────────
+class World{
+  constructor(){this.reset();}
+  reset(){
+    this.orgs=[]; this.food=[];
+    this.foodGrid=new Grid(60); this.orgGrid=new Grid(90);
+    this.tick=0; this.births=0; this.deaths=0; this.matings=0; this.kills=0;
+    this.peakGen=0; this.foodRate=0.55; this.mutationRate=0.30;
+    this.history=[];
+    // pheromone field
+    this.pcs=34; this.pcols=Math.ceil(W/this.pcs)+1; this.prows=Math.ceil(H/this.pcs)+1;
+    this.phero=new Float32Array(this.pcols*this.prows);
+    // ONE common ancestor — whole population are its near-identical clones
+    this.ancestor=ancestorGenome();
+    NEXT_LINE=1;
+    for(let i=0;i<80;i++){
+      const g=mutate(this.ancestor, 0.06);     // tiny variation to select on
+      this.orgs.push(new Org(g,rnd(W),rnd(H),0,1)); // all share lineage #1
+    }
+    for(let i=0;i<260;i++) this.spawnFood();
+  }
+  spawnFood(){this.food.push({x:rnd(W),y:rnd(H),e:34+rnd(20)});}
+  eat(f){const i=this.food.indexOf(f); if(i>=0)this.food.splice(i,1);}
+  pIdx(x,y){const c=clamp((x/this.pcs)|0,0,this.pcols-1),r=clamp((y/this.pcs)|0,0,this.prows-1);return r*this.pcols+c;}
+  depositPhero(x,y,a){this.phero[this.pIdx(x,y)]=Math.min(3,this.phero[this.pIdx(x,y)]+a);}
+  sensePhero(x,y){return this.phero[this.pIdx(x,y)];}
+  cataclysm(){
+    this.orgs.sort(()=>Math.random()-0.5);
+    const keep=Math.max(6,(this.orgs.length*0.3)|0);
+    this.deaths+=this.orgs.length-keep; this.orgs.length=keep;
+  }
+  step(){
+    this.tick++;
+    if(this.food.length < 80+this.foodRate*420 && Math.random()<this.foodRate) this.spawnFood();
+    // decay pheromone field
+    const ph=this.phero; for(let i=0;i<ph.length;i++) ph[i]*=0.955;
+    // rebuild spatial hashes
+    this.foodGrid.clear(); for(const f of this.food) this.foodGrid.add(f);
+    this.orgGrid.clear();  for(const o of this.orgs) this.orgGrid.add(o);
+
+    const newborns=[], mated=new Set();
+    for(let i=this.orgs.length-1;i>=0;i--){
+      const o=this.orgs[i];
+      if(o.dead) continue;
+      o.step(this);
+      if(o.dead) continue;
+      if(o.energy>REPRO_E && this.orgs.length+newborns.length<460 && !mated.has(o)){
+        // find a fertile, SIMILAR-COLOURED partner → speciation barrier
+        let mate=null, md=46*46;
+        for(const p of this.orgGrid.near(o.x,o.y)){
+          if(p===o||p.dead||mated.has(p)||p.energy<160) continue;
+          if(hueDist(p.g.hue,o.g.hue)>MATE_HUE) continue;
+          const dx=p.x-o.x, dy=p.y-o.y, d=dx*dx+dy*dy;
+          if(d<md){md=d;mate=p;}
+        }
+        if(mate){ newborns.push(o.mateWith(mate,this)); mated.add(o); mated.add(mate); this.matings++; }
+        else    { newborns.push(o.reproduce(this)); }
+        this.births++;
+        this.peakGen=Math.max(this.peakGen,o.gen+1);
+      }
+    }
+    // remove the dead (starved or eaten)
+    let alive=[];
+    for(const o of this.orgs){ if(o.dead) this.deaths++; else alive.push(o); }
+    this.orgs=alive.concat(newborns);
+
+    // gentle rescue: clone survivors rather than inventing new lineages
+    if(this.orgs.length<6){
+      if(this.orgs.length===0){
+        for(let i=0;i<8;i++) this.orgs.push(new Org(mutate(this.ancestor,0.1),rnd(W),rnd(H),0,1));
+      }else{
+        const base=this.orgs.slice();
+        while(this.orgs.length<10){
+          const s=base[(Math.random()*base.length)|0];
+          this.orgs.push(new Org(mutate(s.g,0.12),rnd(W),rnd(H),s.gen,s.line));
+        }
+      }
+    }
+    if(this.tick%6===0) this.sample();
+  }
+  sample(){
+    let s=0,z=0,e=0,c=0,n=this.orgs.length||1;
+    for(const o of this.orgs){s+=o.g.speedGene;z+=o.g.sizeGene;e+=o.g.senseGene;c+=o.g.dietGene;}
+    this.history.push({speed:s/n,size:z/n,sense:e/n,carn:c/n});
+    if(this.history.length>220) this.history.shift();
+  }
+}
+
+let world=new World();
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+let selected=null, showPhero=true;
+function draw(){
+  ctx.fillStyle='#070a0f'; ctx.fillRect(0,0,W,H);
+  // pheromone haze
+  if(showPhero){
+    const cs=world.pcs, ph=world.phero;
+    for(let r=0;r<world.prows;r++) for(let c=0;c<world.pcols;c++){
+      const v=ph[r*world.pcols+c]; if(v>0.04){
+        ctx.fillStyle='rgba(122,162,255,'+Math.min(0.16,v*0.10)+')';
+        ctx.fillRect(c*cs,r*cs,cs,cs);
+      }
+    }
+  }
+  // plant food
+  ctx.fillStyle='#1f3a2e';
+  for(const f of world.food){ ctx.beginPath(); ctx.arc(f.x,f.y,2.4,0,TAU); ctx.fill(); }
+  // organisms — appearance evolves with size & diet (bacteria → fish → shark)
+  const t=performance.now()*0.001;
+  for(const o of world.orgs) drawCreature(o,t);
+}
+
+// life-form classification used for both the skin and the inspector
+function formOf(o){
+  const r=o.r, c=o.g.dietGene;
+  if(r<5.0) return ['Bacterium','🦠'];
+  if(r<7.0) return ['Microbe','🐛'];
+  if(r<9.5) return c>0.5?['Hunter fish','🐟']:['Fish','🐟'];
+  return c>0.55?['Apex predator','🦈']:['Great fish','🐠'];
+}
+
+function drawCreature(o,t){
+  const full=clamp(o.energy/MAX_E,0,1);
+  const hue=o.g.hue, c=o.g.dietGene, r=o.r;
+  const Lt=58+full*16, Lm=46+full*14, Ld=30+full*10;   // top / mid / shadow tones
+  const top =`hsl(${hue} 72% ${Lt}%)`;
+  const mid =`hsl(${hue} 70% ${Lm}%)`;
+  const sha =`hsl(${hue} 64% ${Ld}%)`;
+  const sp=Math.hypot(o.vx,o.vy);
+  const phase=o.x*0.05+o.y*0.05;
+  const beat=Math.sin(t*(3+sp*5)+phase);
+  const amp=clamp(0.35+sp*1.6,0.35,1.7);
+  const TWO=Math.PI;
+
+  ctx.save();
+  ctx.translate(o.x,o.y); ctx.rotate(o.a);
+  ctx.lineJoin='round'; ctx.lineCap='round';
+
+  if(o===selected){
+    ctx.beginPath(); ctx.arc(0,0,o.sense,0,TAU);
+    ctx.strokeStyle='rgba(92,242,196,.18)'; ctx.lineWidth=1; ctx.stroke();
+  }
+
+  // soft glow / depth halo behind every organism
+  const halo=ctx.createRadialGradient(0,0,r*0.3,0,0,r*2.4);
+  halo.addColorStop(0,`hsla(${hue} 80% 60% / .22)`);
+  halo.addColorStop(1,`hsla(${hue} 80% 60% / 0)`);
+  ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(0,0,r*2.4,0,TAU); ctx.fill();
+
+  if(r<5.0){                                   // 🦠 bacterium — glowing capsule + flagella
+    ctx.strokeStyle=`hsla(${hue} 60% 50% / .7)`; ctx.lineWidth=1.1;
+    for(const s of [-1,1]){
+      ctx.beginPath();
+      for(let k=0;k<=9;k++){
+        const u=k/9, x=-r*0.7-u*r*2.8, y=Math.sin(u*7+beat*3)*r*0.55*s*(0.35+u);
+        k?ctx.lineTo(x,y):ctx.moveTo(x,y);
+      }
+      ctx.stroke();
+    }
+    const g=ctx.createLinearGradient(0,-r,0,r);
+    g.addColorStop(0,top); g.addColorStop(1,sha);
+    ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,0,r*1.25,r*0.85,0,0,TAU); ctx.fill();
+    ctx.fillStyle=`hsla(${hue} 60% 30% / .55)`; ctx.beginPath(); ctx.arc(r*0.15,0,r*0.34,0,TAU); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.35)'; ctx.beginPath(); ctx.ellipse(-r*0.35,-r*0.3,r*0.4,r*0.22,-0.5,0,TAU); ctx.fill();
+
+  }else if(r<7.0){                             // 🐛 ciliate — translucent blob ringed with cilia
+    const rx=r*1.35, ry=r*0.95;
+    ctx.strokeStyle=`hsla(${hue} 55% 55% / .55)`; ctx.lineWidth=1;
+    for(let k=0;k<18;k++){
+      const ang=k/18*TAU, cx=Math.cos(ang)*rx, cy=Math.sin(ang)*ry;
+      const w=0.45+0.55*Math.sin(t*7+k*0.7+phase);
+      ctx.beginPath(); ctx.moveTo(cx,cy);
+      ctx.lineTo(cx+Math.cos(ang)*2.6*w, cy+Math.sin(ang)*2.6*w); ctx.stroke();
+    }
+    const g=ctx.createRadialGradient(-r*0.3,-r*0.3,r*0.2,0,0,rx);
+    g.addColorStop(0,top); g.addColorStop(1,mid);
+    ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,0,rx,ry,0,0,TAU); ctx.fill();
+    // organelles
+    ctx.fillStyle=`hsla(${hue} 60% 32% / .5)`;
+    ctx.beginPath(); ctx.arc(-r*0.3,r*0.1,r*0.42,0,TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(r*0.4,-r*0.25,r*0.2,0,TAU); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.3)'; ctx.beginPath(); ctx.ellipse(-r*0.4,-r*0.4,r*0.5,r*0.25,-0.5,0,TAU); ctx.fill();
+
+  }else{                                       // 🐟 / 🦈 fish & predators
+    const bL=r*1.95, bH=r*0.92, sw=beat*amp*r*0.95;
+    const finFill=`hsla(${hue} 65% ${Lm}% / .8)`;
+
+    // caudal (tail) fin — smooth crescent swinging with the swim cycle
+    ctx.fillStyle=finFill;
+    ctx.beginPath();
+    ctx.moveTo(-bL*0.55,0);
+    ctx.quadraticCurveTo(-bL*0.85, sw*0.5, -bL*1.05, sw-r*0.85);
+    ctx.quadraticCurveTo(-bL*0.8, sw*0.5, -bL*0.78, sw*0.35);
+    ctx.quadraticCurveTo(-bL*0.8, sw*0.5, -bL*1.05, sw+r*0.85);
+    ctx.quadraticCurveTo(-bL*0.85, sw*0.5, -bL*0.55, 0);
+    ctx.closePath(); ctx.fill();
+
+    // dorsal fin — smooth sail, taller & sharper for carnivores
+    const dh=r*(0.5+c*1.0);
+    ctx.fillStyle=finFill;
+    ctx.beginPath();
+    ctx.moveTo(bL*0.12,-bH*0.55);
+    ctx.quadraticCurveTo(-bL*0.1,-bH*0.6-dh, -bL*0.42,-bH*0.62);
+    ctx.quadraticCurveTo(-bL*0.2,-bH*0.55, bL*0.12,-bH*0.55);
+    ctx.closePath(); ctx.fill();
+
+    // pectoral fin — gentle flap
+    const pf=Math.abs(beat)*r*0.5;
+    ctx.fillStyle=`hsla(${hue} 65% ${Lm}% / .6)`;
+    ctx.beginPath();
+    ctx.moveTo(bL*0.18,bH*0.3);
+    ctx.quadraticCurveTo(-bL*0.1,bH*0.55+pf, -bL*0.28,bH*0.45+pf+r*0.25);
+    ctx.quadraticCurveTo(-bL*0.05,bH*0.3, bL*0.18,bH*0.3);
+    ctx.closePath(); ctx.fill();
+
+    // body — smooth teardrop, lighter belly via vertical gradient
+    const snout=bL*(0.5+c*0.18);
+    const bg=ctx.createLinearGradient(0,-bH,0,bH);
+    bg.addColorStop(0,sha); bg.addColorStop(0.45,mid); bg.addColorStop(1,top);
+    ctx.fillStyle=bg;
+    ctx.beginPath();
+    ctx.moveTo(snout,0);
+    ctx.bezierCurveTo(bL*0.45,-bH, -bL*0.1,-bH, -bL*0.5,-bH*0.28);
+    ctx.bezierCurveTo(-bL*0.62,-bH*0.12, -bL*0.62,bH*0.12, -bL*0.5,bH*0.28);
+    ctx.bezierCurveTo(-bL*0.1,bH, bL*0.45,bH, snout,0);
+    ctx.closePath(); ctx.fill();
+    // top sheen
+    ctx.fillStyle='rgba(255,255,255,.16)';
+    ctx.beginPath();
+    ctx.moveTo(bL*0.3,-bH*0.5);
+    ctx.bezierCurveTo(bL*0.0,-bH*0.85, -bL*0.35,-bH*0.7, -bL*0.45,-bH*0.3);
+    ctx.bezierCurveTo(-bL*0.2,-bH*0.55, bL*0.1,-bH*0.55, bL*0.3,-bH*0.5);
+    ctx.closePath(); ctx.fill();
+
+    // teeth (predators)
+    if(c>0.5){
+      ctx.fillStyle='rgba(255,255,255,.92)';
+      for(let k=0;k<3;k++){
+        const x=snout-r*0.2-k*r*0.3;
+        ctx.beginPath(); ctx.moveTo(x,bH*0.06);
+        ctx.lineTo(x-1.3,bH*0.06+r*0.3); ctx.lineTo(x+1.3,bH*0.06); ctx.closePath(); ctx.fill();
+      }
+    }
+    // gill arc
+    ctx.strokeStyle=`hsla(${hue} 55% 30% / .5)`; ctx.lineWidth=1.1;
+    ctx.beginPath(); ctx.arc(bL*0.18,0,bH*0.62,-0.9,0.9); ctx.stroke();
+    // eye
+    const er=Math.max(1.3,r*0.17);
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(bL*0.4,-bH*0.3,er,0,TAU); ctx.fill();
+    ctx.fillStyle='#0a0f17'; ctx.beginPath(); ctx.arc(bL*0.43,-bH*0.3,er*0.55,0,TAU); ctx.fill();
+  }
+
+  if(o===selected){
+    ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=1.5;
+    ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.arc(0,0,r*2.2,0,TAU); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+// sparkline
+const sp=document.getElementById('spark'), spx=sp.getContext('2d');
+function drawSpark(){
+  sp.width=sp.clientWidth*DPR; sp.height=sp.clientHeight*DPR;
+  spx.setTransform(DPR,0,0,DPR,0,0);
+  const W2=sp.clientWidth,H2=sp.clientHeight; spx.clearRect(0,0,W2,H2);
+  const hist=world.history; if(hist.length<2) return;
+  for(const [key,col] of [['speed','#5cf2c4'],['size','#ffd27a'],['sense','#7aa2ff'],['carn','#ff7a8a']]){
+    spx.beginPath();
+    hist.forEach((p,i)=>{const x=i/(hist.length-1)*W2, y=H2-p[key]*H2; i?spx.lineTo(x,y):spx.moveTo(x,y);});
+    spx.strokeStyle=col; spx.lineWidth=1.4; spx.stroke();
+  }
+}
+
+// ── HUD ────────────────────────────────────────────────────────────────────────
+const $=id=>document.getElementById(id);
+function countSpecies(){
+  const b=new Array(12).fill(0);
+  for(const o of world.orgs) b[((o.g.hue/30)|0)%12]++;
+  return b.filter(x=>x>=4).length || (world.orgs.length?1:0);
+}
+function updateHUD(){
+  $('s-gen').textContent=world.peakGen;
+  $('s-pop').textContent=world.orgs.length;
+  $('s-species').textContent=countSpecies();
+  let carn=0; for(const o of world.orgs) if(o.g.dietGene>0.5) carn++;
+  $('s-carn').textContent=(world.orgs.length?Math.round(carn/world.orgs.length*100):0)+'%';
+  $('s-food').textContent=world.food.length;
+  $('s-bd').textContent=world.births+' / '+world.deaths;
+  $('s-mk').textContent=world.matings+' · '+world.kills;
+}
+function role(o){
+  if(o.g.dietGene>0.6) return ['Predator','#ff7a8a'];
+  if(o.g.dietGene<0.3) return ['Grazer','#5cf2c4'];
+  return ['Omnivore','#ffd27a'];
+}
+function inspectHTML(o){
+  if(!o) return 'click an organism to inspect its brain, genes &amp; role';
+  const pct=v=>Math.round(v*100);
+  const bar=(v,c)=>`<div class="bar"><i style="width:${pct(v)}%;background:${c}"></i></div>`;
+  const [rn,rc]=role(o);
+  const [fn,fe]=formOf(o);
+  return `<div>
+      <span class="tag" style="border-color:${rc};color:${rc}">${fe} ${fn}</span>
+      <span class="tag">lineage #${o.line}</span>
+      <span class="tag">gen ${o.gen}</span>
+      <span class="tag">age ${o.age}</span>
+      <span class="tag" style="border-color:hsl(${o.g.hue} 70% 50%);color:hsl(${o.g.hue} 70% 65%)">colour</span>
+    </div>
+    <div style="margin-top:8px">Energy <b>${o.energy.toFixed(0)}</b>/${MAX_E} ${bar(o.energy/MAX_E,'#5cf2c4')}</div>
+    <div style="margin-top:6px">Diet (herb→carn) ${bar(o.g.dietGene,'#ff7a8a')}</div>
+    <div>Speed ${bar(o.g.speedGene,'#5cf2c4')}</div>
+    <div>Size ${bar(o.g.sizeGene,'#ffd27a')} <span style="color:#56708a">r ${o.r.toFixed(1)}/${o.matureR.toFixed(1)}</span></div>
+    <div>Sense ${bar(o.g.senseGene,'#7aa2ff')}</div>
+    <div style="margin-top:8px;color:#56708a">brain ${N_W} weights · ${N_IN}→${N_HID}→${N_OUT} · only mates within ${MATE_HUE}° hue</div>`;
+}
+
+// ── Interaction ─────────────────────────────────────────────────────────────────
+cv.addEventListener('click',e=>{
+  const r=cv.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  let best=null,bd=1e9;
+  for(const o of world.orgs){
+    const d=Math.hypot(o.x-mx,o.y-my);
+    if(d<Math.max(14,o.r+6) && d<bd){bd=d;best=o;}
+  }
+  selected=best; $('inspect').innerHTML=inspectHTML(selected);
+});
+$('k-food').addEventListener('input',e=>world.foodRate=e.target.value/100);
+$('k-mut').addEventListener('input',e=>world.mutationRate=e.target.value/100);
+let simSpeed=3;
+$('k-spd').addEventListener('input',e=>{simSpeed=+e.target.value;$('spd-val').textContent='×'+simSpeed;});
+$('k-phero').addEventListener('input',e=>showPhero=e.target.checked);
+let paused=false;
+$('b-pause').addEventListener('click',e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause';});
+$('b-cull').addEventListener('click',()=>world.cataclysm());
+$('b-reset').addEventListener('click',()=>{world=new World();selected=null;$('inspect').innerHTML=inspectHTML(null);});
+
+// ── Main loop ────────────────────────────────────────────────────────────────────
+function loop(){
+  if(!paused){ for(let i=0;i<simSpeed;i++) world.step(); }
+  draw();
+  if(selected){
+    if(selected.dead || world.orgs.indexOf(selected)<0){ /* keep last view */ }
+    else if((world.tick&7)===0) $('inspect').innerHTML=inspectHTML(selected);
+  }
+  if((world.tick&15)===0){ updateHUD(); drawSpark(); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+updateHUD();
+</script>
+</body>
+</html>
