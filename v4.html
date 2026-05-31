@@ -295,7 +295,9 @@ class Org{
     }
   }
   get r(){ if(this.kind===WEED) return 3+this.mass*0.16; if(this.kind===PLANK) return 1.2+this.mass*0.15;
-    return 2+this.size*4+this.size*this.size*24+clamp(this.mass/this.reproMass,0,1)*2; }
+    // 體型隨年齡+營養成長：老的大蝦可以吃小魚
+    const growth=1+this.age*0.0003+clamp(this.mass/this.reproMass,0,1)*0.5;
+    return (2+this.size*4+this.size*this.size*24)*growth+clamp(this.mass/this.reproMass,0,1)*2; }
 }
 
 // ── 世界 ──
@@ -542,7 +544,7 @@ class World{
     if(o.mass>o.reproMass && this.orgs.length+nb.length<3400){ o.mass*=0.5;
       const childFitness=o.fitness*0.6+(o.feedCount>0?o.feedCount*0.3:0); // 繼承父母 fitness
       nb.push(new Org(FAUNA,o.x+rnd(14,-14),o.y+rnd(14,-14),{ mass:o.mass, brain:mutBrain(o.brain,this.mutRate),
-        size:mg(o.size,this.mutRate,0.07), diet:mg(o.diet,this.mutRate,0.1), speed:mg(o.speed,this.mutRate), sense:mg(o.sense,this.mutRate),
+        size:o.size, diet:o.diet, speed:mg(o.speed,this.mutRate), sense:mg(o.sense,this.mutRate),
         school:mg(o.school,this.mutRate*0.7,0.15),
         fitness:childFitness,
         hue:(o.hue+(Math.random()<this.mutRate?rnd(14,-14):0)+360)%360, gen:o.gen+1, line:o.line }));
