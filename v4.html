@@ -271,6 +271,8 @@ class Org{
     if(kind===WEED){
       this.hue=opt.hue??rnd(150,110); this.mass=opt.mass??rnd(34,20);
       this.sway=rnd(0.9,0.4); this.phase=rnd(TAU); this.len=rnd(34,18);
+      this.maxAge=opt.maxAge??(4000+rnd(3000));
+      this.rootHealth=1;
     } else if(kind===PLANK){
       this.hue=opt.hue??rnd(170,120); this.mass=opt.mass??rnd(5,3);
       this.drift=rnd(0.25,0.08); this.dphase=rnd(TAU);
@@ -317,8 +319,8 @@ class World{
     // 生物種子
     for(let b=0;b<24;b++){ const cx=rnd(W*0.9,W*0.1),cy=rnd(H*0.9,H*0.1),n=6+((Math.random()*7)|0);
       for(let k=0;k<n;k++) this.orgs.push(new Org(WEED,cx+rnd(90,-90),cy+rnd(90,-90))); }
-    for(let i=0;i<2200;i++) this.orgs.push(new Org(PLANK,rnd(W),rnd(H)));
-    for(let i=0;i<460;i++) this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.22,0.05),diet:rnd(0.18,0)}));
+    for(let i=0;i<1400;i++) this.orgs.push(new Org(PLANK,rnd(W),rnd(H)));
+    for(let i=0;i<600;i++) this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.22,0.05),diet:rnd(0.18,0)}));
     for(let i=0;i<45;i++)  this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.5,0.3),diet:rnd(0.6,0.35)}));
     for(let i=0;i<7;i++)   this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.85,0.62),diet:rnd(0.95,0.7)}));
     this.history=[]; this._histTick=0;
@@ -367,9 +369,9 @@ class World{
     for(let i=snowflakes.length-1;i>=0;i--){ const s=snowflakes[i]; s.step();
       if(s.y>H-10||s.mass<0.01){ this.addDiss(s.x,clamp(s.y,H-10,H-5),s.mass*1.5); snowflakes.splice(i,1); } }
     // 浮游從剩餘營養萌芽（加速）
-    if(this.tick%2===0){ for(let s=0;s<4;s++){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>45){
+    if(this.tick%4===0){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>50){
       const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
-      const m=this.takeDiss(cx,cy,3); if(m>1.5) this.orgs.push(new Org(PLANK,clamp(cx,4,W-4),clamp(cy,4,H-4),{mass:m})); } } }
+      const m=this.takeDiss(cx,cy,3); if(m>2) this.orgs.push(new Org(PLANK,clamp(cx,4,W-4),clamp(cy,4,H-4),{mass:m})); } }
     if(this.tick%200===0) this.safetyNets();
     if(this.tick%90===0) this.census();
   }
@@ -396,11 +398,11 @@ class World{
       const drop=new Set(dead.slice(0,this.species.length-170).map(s=>s.id)); this.species=this.species.filter(s=>!drop.has(s.id)); }
   }
   safetyNets(){
-    // 浮游安全網：若浮游 <200 直接從溶解營養大量生成
+    // 浮游安全網：極低時少量補充
     let plankCount=0;
     for(const o of this.orgs) if(o.kind===PLANK) plankCount++;
-    if(plankCount<200){
-      const need=Math.min(60,300-plankCount);
+    if(plankCount<60){
+      const need=Math.min(30,120-plankCount);
       for(let n=0;n<need;n++){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>30){
         const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
         const m=this.takeDiss(cx,cy,2);
@@ -427,21 +429,28 @@ class World{
       if(x>0)f+=d[i-1]-d[i]; if(x<c-1)f+=d[i+1]-d[i]; if(y>0)f+=d[i-c]-d[i]; if(y<r-1)f+=d[i+c]-d[i];
       out[i]=d[i]+D*f; } this.diss.set(out); }
   stepWeed(o,sun,nb){
-    o.mass+=this.takeDiss(o.x,o.y,0.6*sun); o.mass-=0.045; this.addDiss(o.x,o.y,0.045);
-    if(o.mass>110){this.addDetritus(o.x,o.y,o.mass-110);o.mass=110;}
-    if(o.mass<=2.5){o.dead=true;return;}
-    if(o.mass>92 && this.weedCount<560 && this.orgs.length+nb.length<3400 && Math.random()<0.5){ o.mass*=0.5;
-      nb.push(new Org(WEED,o.x+rnd(70,-70),o.y+rnd(70,-70),{mass:o.mass,hue:(o.hue+rnd(8,-8)+360)%360,gen:o.gen+1,line:o.line})); this.gen=Math.max(this.gen,o.gen+1);} }
+    o.mass+=this.takeDiss(o.x,o.y,0.6*sun); o.mass-=0.035; this.addDiss(o.x,o.y,0.035);
+    // 根系老化：隨年齡衰退
+    o.age++; if(o.age>o.maxAge){o.rootHealth-=0.003;}
+    if(o.rootHealth<=0){o.dead=true;return;}
+    if(o.mass>120){this.addDetritus(o.x,o.y,o.mass-120);o.mass=120;}
+    if(o.mass<=1.8){o.dead=true;return;}
+    // 匍匐莖繁殖 — 沿海底走莖擴散，有壽命限制
+    if(o.mass>75 && Math.random()<0.08 && this.orgs.length+nb.length<4000){
+      const angle=rnd(TAU), dist=rnd(120,40);
+      const nx=((o.x+Math.cos(angle)*dist)%W+W)%W, ny=((o.y+Math.sin(angle)*dist)%H+H)%H;
+      const childMass=o.mass*0.3; o.mass-=childMass;
+      nb.push(new Org(WEED,nx,ny,{mass:childMass,hue:(o.hue+rnd(6,-6)+360)%360,gen:o.gen+1,line:o.line,maxAge:o.maxAge+rnd(600,-600)}));
+      this.gen=Math.max(this.gen,o.gen+1); } }
   stepPlank(o,sun,detGrid,nb){
     o.dphase+=0.02; o.x+=Math.cos(o.dphase)*o.drift+0.06; o.y+=Math.sin(o.dphase*0.7)*o.drift; this.wrap(o);
     o.mass+=this.takeDiss(o.x,o.y,0.6*sun);
     for(const d of detGrid.near(o.x,o.y)){ const dx=d.x-o.x,dy=d.y-o.y; if(dx*dx+dy*dy<36&&d.m>0){const t=Math.min(d.m,0.4);d.m-=t;o.mass+=t*0.7;this.addDiss(o.x,o.y,t*0.3);break;} }
-    // 夜間代謝降低（晚上海水冷，浮游省體力）
-    const met=0.025+0.025*(1-sun*0.6);
+    const met=0.03+0.02*sun;
     o.mass-=met; this.addDiss(o.x,o.y,met);
-    if(o.mass>24){this.addDiss(o.x,o.y,o.mass-24);o.mass=24;}
-    if(o.mass<=0.8){o.dead=true;return;}
-    if(o.mass>6 && this.orgs.length+nb.length<4500){ o.mass*=0.5;
+    if(o.mass>18){this.addDiss(o.x,o.y,o.mass-18);o.mass=18;}
+    if(o.mass<=1.0){o.dead=true;return;}
+    if(o.mass>10 && this.orgs.length+nb.length<4000){ o.mass*=0.5;
       nb.push(new Org(PLANK,o.x+rnd(12,-12),o.y+rnd(12,-12),{mass:o.mass,hue:(o.hue+rnd(10,-10)+360)%360,gen:o.gen+1,line:o.line})); this.gen=Math.max(this.gen,o.gen+1);} }
   stepFauna(o,foodGrid,detGrid,weedGrid,animGrid,schoolGrid,nb){
     if(o.age>o.maxAge){o.dead=true;return;}
@@ -504,14 +513,14 @@ class World{
     this.wrap(o);
     // 代謝（低 fitness 動物代謝更高 → 淘汰弱者）
     const sp=Math.hypot(o.vx,o.vy);
-    const fitPenalty=1+0.15*(1-clamp(o.fitness/10,0,1));
+    const fitPenalty=1+0.06*(1-clamp(o.fitness/8,0,1));
     const met=(0.025+o.mass*0.0022+sp*0.03)*fitPenalty;
     o.mass-=met; this.addDiss(o.x,o.y,met);
     // 吃植物/碎屑 + fitness
     if(canPlants && edT && !edT.dead){ const dx=edT.x-o.x,dy=edT.y-o.y, rr=(myR+(edT.r||3)+3);
       if(dx*dx+dy*dy<rr*rr){
         if(edT.m!==undefined){ const t=Math.min(edT.m,3); edT.m-=t; const gain=t*0.6*(1-o.diet*0.7); o.mass+=gain; this.addDiss(o.x,o.y,t*(1-0.6*(1-o.diet*0.7))); o.fitness+=gain*0.2; o.feedCount++; }
-        else { let take=edT.kind===WEED?Math.min(Math.max(0,edT.mass-7),5):Math.min(edT.mass*0.5,2.5);
+        else { let take=edT.kind===WEED?Math.min(Math.max(0,edT.mass-7),6):Math.min(edT.mass*0.55,3.5);
           if(take>0.2){ edT.mass-=take; if(edT.kind!==WEED&&edT.mass<=1.0)edT.dead=true;
             const g=take*0.6*(1-o.diet*0.7); o.mass+=g; o.fitness+=g*0.2; o.feedCount++;
             this.addDetritus(o.x,o.y,(take-g)*0.6); this.addDiss(o.x,o.y,(take-g)*0.4); } } } }
@@ -552,7 +561,7 @@ class World{
       tick:this.tick, gen:this.gen, dayLen:this.dayLen, mutRate:this.mutRate, curStr:this.curStr,
       orgs:this.orgs.map(o=>{
         const base={k:o.kind,x:o.x,y:o.y,age:o.age,gen:o.gen,line:o.line,vx:o.vx,vy:o.vy,a:o.a,dead:o.dead,mass:o.mass,hue:o.hue};
-        if(o.kind===WEED){base.sw=o.sway;base.ph=o.phase;base.ln=o.len;}
+        if(o.kind===WEED){base.sw=o.sway;base.ph=o.phase;base.ln=o.len;base.ma=o.maxAge;base.rh=o.rootHealth;}
         else if(o.kind===PLANK){base.dr=o.drift;base.dp=o.dphase;}
         else {base.sz=o.size;base.dt=o.diet;base.sp=o.speed;base.se=o.sense;base.sc=o.school;
           base.rm=o.reproMass;base.ma=o.maxAge;base.br=Array.from(o.brain);
@@ -573,7 +582,7 @@ class World{
     w.orgs=d.orgs.map(o=>{
       const org=new Org(o.k,o.x,o.y,{gen:o.gen,line:o.line});
       org.age=o.age; org.vx=o.vx||0; org.vy=o.vy||0; org.a=o.a||0; org.dead=o.dead||false; org.mass=o.mass; org.hue=o.hue;
-      if(o.k===WEED){org.sway=o.sw;org.phase=o.ph;org.len=o.ln;}
+      if(o.k===WEED){org.sway=o.sw;org.phase=o.ph;org.len=o.ln;org.maxAge=o.ma||(4000+rnd(3000));org.rootHealth=o.rh||1;}
       else if(o.k===PLANK){org.drift=o.dr;org.dphase=o.dp;}
       else {org.size=o.sz;org.diet=o.dt;org.speed=o.sp;org.sense=o.se;org.school=o.sc||0;org.reproMass=o.rm;org.maxAge=o.ma;
         org.brain=o.br?new Float32Array(o.br):randBrain();org.steerBias=0;org._h=new Float32Array(N_HID);org._o=new Float32Array(N_OUT);org._i=new Float32Array(N_IN);
