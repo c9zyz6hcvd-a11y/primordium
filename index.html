@@ -17,6 +17,11 @@
   #stage{position:relative;flex:1;min-width:0}
   canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
   canvas:active{cursor:grabbing}
+  .panel-toggle{position:absolute;top:12px;right:12px;z-index:5;width:auto;
+    background:rgba(13,19,28,.85);border:1px solid var(--line);color:var(--dim);
+    padding:6px 11px;border-radius:7px;font:inherit;cursor:pointer;backdrop-filter:blur(4px)}
+  .panel-toggle:hover{border-color:var(--accent);color:var(--accent)}
+  #side.hidden{display:none}
   #side{width:312px;background:linear-gradient(180deg,#0d131c,#0a0f17);
     border-left:1px solid var(--line);padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
   h1{font-size:15px;letter-spacing:.18em;margin:0;color:var(--accent);text-transform:uppercase}
@@ -47,7 +52,9 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="stage"><canvas id="c"></canvas></div>
+  <div id="stage"><canvas id="c"></canvas>
+    <button id="b-toggle" class="panel-toggle">hide stats ›</button>
+  </div>
   <aside id="side">
     <div>
       <h1>Primordium</h1>
@@ -89,6 +96,7 @@
         <input id="k-spd" type="range" min="1" max="40" value="3"></label>
       <label class="ctrl"><input id="k-phero" type="checkbox" checked style="width:auto;display:inline"> show pheromones</label>
       <label class="ctrl"><input id="k-pred" type="checkbox" checked style="width:auto;display:inline"> highlight predators (red ring)</label>
+      <label class="ctrl"><input id="k-sustain" type="checkbox" checked style="width:auto;display:inline"> keep predators from extinction</label>
     </div>
 
     <div class="card">
@@ -233,7 +241,7 @@ class Org{
     this.matureR = 4 + g.sizeGene*9;            // adult radius 4..13
     this.maxThrust = 0.05 + g.speedGene*0.45;
     this.sense = 30 + g.senseGene*140;
-    this.metab = 0.04 + g.sizeGene*0.10 + g.speedGene*0.08 + g.dietGene*0.03;
+    this.metab = 0.04 + g.sizeGene*0.09 + g.speedGene*0.07;  // carnivory no longer taxed
     this.r = this.matureR*0.45;                 // born juvenile, grows up
     this._hid=new Float32Array(N_HID);
     this._out=new Float32Array(N_OUT);
@@ -262,7 +270,7 @@ class Org{
       else if(o.r < this.r*0.87){ if(d<pd){pd=d;pdx=dx;pdy=dy;prey=o;} }
       // ---- predation: contact with a smaller organism (prey safe inside shelter) ----
       if(o.r < this.r*0.82 && d < this.r && !world.inShelter(o.x,o.y)){
-        const gain=(o.energy*0.55 + o.r*2 + 12)*(0.25 + 0.75*this.g.dietGene);
+        const gain=(o.energy*0.7 + o.r*2.6 + 26)*(0.3 + 0.9*this.g.dietGene);
         this.energy=Math.min(MAX_E,this.energy+gain);
         o.dead=true; world.kills++;
       }
@@ -353,7 +361,7 @@ class World{
     this.foodGrid=new Grid(60); this.orgGrid=new Grid(90);
     this.tick=0; this.births=0; this.deaths=0; this.matings=0; this.kills=0;
     this.peakGen=0; this.foodRate=0.55; this.mutationRate=0.30;
-    this.history=[];
+    this.sustainPred=true; this.history=[];
     // pheromone field
     this.pcs=34; this.pcols=Math.ceil(W/this.pcs)+1; this.prows=Math.ceil(H/this.pcs)+1;
     this.phero=new Float32Array(this.pcols*this.prows);
@@ -392,8 +400,8 @@ class World{
     const keep=Math.max(6,(this.orgs.length*0.3)|0);
     this.deaths+=this.orgs.length-keep; this.orgs.length=keep;
   }
-  seedPredators(){            // inject a pod of large reddish carnivores
-    for(let i=0;i<14;i++){
+  seedPredators(n=14){        // inject a pod of large reddish carnivores
+    for(let i=0;i<n;i++){
       const g=mutate(this.ancestor,0.12);
       g.dietGene=rnd(1,0.75); g.sizeGene=rnd(1,0.72); g.speedGene=rnd(1,0.5);
       g.hue=rnd(28,0);        // red family
@@ -452,6 +460,11 @@ class World{
           this.orgs.push(new Org(mutate(s.g,0.12),rnd(W),rnd(H),s.gen,s.line));
         }
       }
+    }
+    // keep predators from going fully extinct (toggleable)
+    if(this.sustainPred && this.tick%150===0){
+      let carn=0; for(const o of this.orgs) if(o.g.dietGene>0.5) carn++;
+      if(carn<5) this.seedPredators(5);
     }
     if(this.tick%6===0) this.sample();
   }
@@ -848,6 +861,12 @@ let simSpeed=3;
 $('k-spd').addEventListener('input',e=>{simSpeed=+e.target.value;$('spd-val').textContent='×'+simSpeed;});
 $('k-phero').addEventListener('input',e=>showPhero=e.target.checked);
 $('k-pred').addEventListener('input',e=>highlightPred=e.target.checked);
+$('k-sustain').addEventListener('input',e=>world.sustainPred=e.target.checked);
+$('b-toggle').addEventListener('click',e=>{
+  const side=$('side'), hidden=side.classList.toggle('hidden');
+  e.target.textContent=hidden?'‹ show stats':'hide stats ›';
+  resize();   // recompute canvas size & camera fit for the new width
+});
 $('b-zin').addEventListener('click',()=>{cam.zoom=clamp(cam.zoom*1.35,cam.min,cam.max);});
 $('b-zout').addEventListener('click',()=>{cam.zoom=clamp(cam.zoom/1.35,cam.min,cam.max);clampCam();});
 $('b-fit').addEventListener('click',()=>{cam.zoom=cam.min;cam.x=W/2;cam.y=H/2;});
@@ -855,17 +874,19 @@ $('b-seedp').addEventListener('click',()=>world.seedPredators());
 let paused=false;
 $('b-pause').addEventListener('click',e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause';});
 $('b-cull').addEventListener('click',()=>world.cataclysm());
-$('b-reset').addEventListener('click',()=>{world=new World();selected=null;cam.zoom=cam.min;cam.x=W/2;cam.y=H/2;$('inspect').innerHTML=inspectHTML(null);});
+$('b-reset').addEventListener('click',()=>{world=new World();world.sustainPred=$('k-sustain').checked;selected=null;cam.zoom=1;cam.x=W/2;cam.y=H/2;$('inspect').innerHTML=inspectHTML(null);});
 
 // ── Main loop ────────────────────────────────────────────────────────────────────
+let frame=0;
 function loop(){
   if(!paused){ for(let i=0;i<simSpeed;i++) world.step(); }
   draw();
-  if(selected){
-    if(selected.dead || world.orgs.indexOf(selected)<0){ /* keep last view */ }
-    else if((world.tick&7)===0) $('inspect').innerHTML=inspectHTML(selected);
+  frame++;
+  // refresh UI on a real-frame cadence (not tick-based) so it stays live even at ×40
+  if(frame%4===0){
+    updateHUD(); drawSpark();
+    if(selected && !selected.dead && world.orgs.indexOf(selected)>=0) $('inspect').innerHTML=inspectHTML(selected);
   }
-  if((world.tick&15)===0){ updateHUD(); drawSpark(); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
