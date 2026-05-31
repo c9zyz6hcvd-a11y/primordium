@@ -165,6 +165,7 @@ class Org{
       this.mass=opt.mass??rnd(34,24);
       this.size=opt.size??rnd(0.6,0.3); this.speed=opt.speed??rnd(0.6,0.3); this.sense=opt.sense??rnd(0.6,0.3);
       this.brain=opt.brain||randBrain();
+      this.maxAge=opt.maxAge ?? (1300+rnd(1000));   // natural lifespan (with variation)
       this.steerBias=0; this._h=new Float32Array(N_HID); this._o=new Float32Array(N_OUT); this._i=new Float32Array(N_IN);
     }
   }
@@ -229,7 +230,8 @@ class World{
     for(let i=this.detritus.length-1;i>=0;i--){
       const d=this.detritus[i];
       d.x+=d.vx*0.02; d.y+=d.vy*0.02; d.vy*=0.99; d.vx*=0.98;
-      if(d.y>H-2){d.y=H-2;d.vy=0;}
+      d.x=((d.x%W)+W)%W;                 // wrap horizontally
+      if(d.y>H-2){d.y=H-2;d.vy=0;}       // marine snow settles on the floor
       const dec=Math.min(d.m,0.012+d.m*0.004);
       d.m-=dec; this.addDiss(d.x,d.y,dec);
       if(d.m<=0.05){ this.addDiss(d.x,d.y,d.m); this.detritus.splice(i,1); } // return remainder, no leak
@@ -286,6 +288,7 @@ class World{
     o.mass += this.takeDiss(o.x,o.y,want);
     o.mass -= 0.045;                          // respiration → back to water
     this.addDiss(o.x,o.y,0.045);
+    if(o.mass>110){ this.addDetritus(o.x,o.y,o.mass-110); o.mass=110; }   // size cap
     if(o.mass<=2.5){ o.dead=true; return; }   // only dies in prolonged darkness, not grazing
     // spread into beds, but soft-capped so it never carpets the whole sea
     if(o.mass>92 && this.weedCount<560 && this.orgs.length+nb.length<3200 && Math.random()<0.5){
@@ -295,9 +298,9 @@ class World{
     }
   }
   stepPlank(o,sun,detGrid,nb){
-    // drift gently
+    // drift gently (wrap around edges)
     o.dphase+=0.02; o.x+=Math.cos(o.dphase)*o.drift + 0.06; o.y+=Math.sin(o.dphase*0.7)*o.drift;
-    if(o.x<2)o.x=2; if(o.x>W-2)o.x=W-2; if(o.y<2)o.y=2; if(o.y>H-2)o.y=H-2;
+    o.x=((o.x%W)+W)%W; o.y=((o.y%H)+H)%H;
     // photosynthesis
     o.mass += this.takeDiss(o.x,o.y,0.5*sun);
     // decomposer: nibble nearby detritus
@@ -306,6 +309,7 @@ class World{
       if(dx*dx+dy*dy<36 && d.m>0){ const take=Math.min(d.m,0.4); d.m-=take; o.mass+=take*0.7; this.addDiss(o.x,o.y,take*0.3); break; }
     }
     o.mass-=0.045; this.addDiss(o.x,o.y,0.045);   // respiration
+    if(o.mass>16){ this.addDiss(o.x,o.y,o.mass-16); o.mass=16; }   // size cap
     if(o.mass<=1.4){ o.dead=true; return; }
     if(o.mass>11 && this.orgs.length+nb.length<3000){
       o.mass*=0.5;
@@ -315,6 +319,7 @@ class World{
   }
   // ---- consumer: shrimp ----
   stepShrimp(o,foodGrid,detGrid,weedGrid,nb){
+    if(o.age>o.maxAge){ o.dead=true; return; }       // die of old age → body becomes detritus
     const sense=40+o.sense*120;
     // find nearest food (plankton/weed) and nearest detritus
     let fd=sense,fdx=0,fdy=0,food=null;
@@ -329,8 +334,8 @@ class World{
     I[1]= td<sense?(tx*ca+ty*sa)/sense:0;
     I[2]= td<sense?(-tx*sa+ty*ca)/sense:0;
     I[3]= clamp(o.mass/60,0,1);
-    const wall=Math.min(o.x,o.y,W-o.x,H-o.y); I[4]=1-clamp(wall/sense,0,1);
-    I[5]=1;                                   // bias input
+    I[4]= 0;                                   // toroidal world → no walls to sense
+    I[5]= 1;                                   // bias input
     think(o.brain,I,o._h,o._o);
     const raw=o._o[0];
     o.steerBias=o.steerBias*0.96+raw*0.04;
@@ -338,8 +343,7 @@ class World{
     const thrust=(o._o[1]*0.5+0.5)*(0.05+o.speed*0.32);
     o.vx+=Math.cos(o.a)*thrust; o.vy+=Math.sin(o.a)*thrust;
     o.vx*=0.9; o.vy*=0.9; o.x+=o.vx; o.y+=o.vy;
-    if(o.x<o.r){o.x=o.r;o.vx*=-0.5;} if(o.y<o.r){o.y=o.r;o.vy*=-0.5;}
-    if(o.x>W-o.r){o.x=W-o.r;o.vx*=-0.5;} if(o.y>H-o.r){o.y=H-o.r;o.vy*=-0.5;}
+    o.x=((o.x%W)+W)%W; o.y=((o.y%H)+H)%H;       // wrap around the edges
     // metabolism (respiration → water)
     const sp=Math.hypot(o.vx,o.vy), met=0.05+o.size*0.05+o.speed*0.04+sp*0.03;
     o.mass-=met; this.addDiss(o.x,o.y,met);
@@ -364,6 +368,7 @@ class World{
     }}
     // excrete (poop) occasionally
     if(o.age%140===0 && o.mass>14){ const e=o.mass*0.05; o.mass-=e; this.addDetritus(o.x,o.y,e); }
+    if(o.mass>80){ this.addDetritus(o.x,o.y,o.mass-80); o.mass=80; }   // hard size cap → no giants
     if(o.mass<=5){ o.dead=true; return; }
     // reproduce
     if(o.mass>52 && this.orgs.length+nb.length<3000){
@@ -413,7 +418,6 @@ function draw(){
       ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+160,0); ctx.lineTo(x+520,H); ctx.lineTo(x+360,H); ctx.closePath(); ctx.fill(); }
     ctx.globalAlpha=1;
   }
-  ctx.strokeStyle='#1b2738'; ctx.lineWidth=2/cam.zoom; ctx.strokeRect(0,0,W,H);
 
   // dissolved nutrient haze (faint blue)
   const cs=world.ncs;
