@@ -38,6 +38,7 @@
   button{background:#14203044;color:var(--ink);border:1px solid var(--line);border-radius:7px;
     padding:7px 9px;font:inherit;cursor:pointer;transition:.15s;flex:1}
   button:hover{border-color:var(--accent);color:var(--accent)}
+  button.brush.active{border-color:var(--gold);color:var(--gold);background:#2a210e}
   .row{display:flex;gap:6px}
   label.ctrl{display:flex;flex-direction:column;gap:4px;color:var(--dim);font-size:11px}
   label.ctrl .v{color:var(--ink)}
@@ -90,6 +91,11 @@
       <label class="ctrl">Mutation rate <input id="k-mut" type="range" min="0" max="100" value="28"></label>
       <label class="ctrl">Sim speed <span class="v" id="spd-val">×3</span><input id="k-spd" type="range" min="1" max="40" value="3"></label>
       <label class="ctrl">Day length <span class="v" id="day-val">3600</span><input id="k-day" type="range" min="800" max="8000" value="3600" step="100"></label>
+    </div>
+    <div class="card">
+      <h2>Add life — click in the sea to place</h2>
+      <div class="row" style="margin-bottom:6px"><button class="brush" data-b="grazer">🦐 grazer</button><button class="brush" data-b="fish">🐟 fish</button><button class="brush" data-b="shark">🦈 shark</button></div>
+      <div class="row"><button class="brush" data-b="seaweed">🌿 seaweed</button><button class="brush" data-b="plankton">🦠 plankton</button><button id="b-brushoff">✋ off</button></div>
     </div>
     <div class="row"><button id="b-pause">Pause</button><button id="b-reset">Reset sea</button></div>
     <div class="row"><button id="b-fit">Fit view</button></div>
@@ -421,7 +427,31 @@ function drawFauna(o,t,night){
     ctx.strokeStyle=`hsla(${o.hue} 60% ${L}% / .7)`; ctx.lineWidth=1.1/cam.zoom;
     for(const s of [-1,1]){ ctx.beginPath(); ctx.moveTo(bl*0.4,0); ctx.quadraticCurveTo(bl*0.9,s*r*0.5,bl*1.3+Math.sin(t*4+s)*2,s*r*0.9); ctx.stroke(); }
     ctx.fillStyle='#0a0f17'; ctx.beginPath(); ctx.arc(bl*0.34,-r*0.3,Math.max(1,r*0.16),0,TAU); ctx.fill();
-  } else { // 🐟→🦈 fish to shark: sleeker & toothier with size+diet
+  } else if(sz>0.56 && carn>0.5){ // 🦈 shark: sleek grey torpedo, tall dorsal, crescent tail
+    const bL=r*2.7, bH=r*0.62, sw=beat*r*0.7;
+    const body=`hsl(${o.hue} 24% ${L-8}%)`, belly=`hsl(${o.hue} 18% ${L+16}%)`, finc=`hsl(${o.hue} 22% ${L-14}%)`;
+    ctx.fillStyle=finc; ctx.beginPath();                     // crescent tail (long upper lobe)
+    ctx.moveTo(-bL*0.58,0);
+    ctx.quadraticCurveTo(-bL*0.95,sw-r*0.3,-bL*1.16,sw-r*1.6);
+    ctx.quadraticCurveTo(-bL*0.82,sw-r*0.2,-bL*0.72,sw*0.3);
+    ctx.quadraticCurveTo(-bL*0.86,sw+r*0.2,-bL*1.0,sw+r*0.9);
+    ctx.quadraticCurveTo(-bL*0.78,sw+r*0.1,-bL*0.58,0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=finc; ctx.beginPath();                     // tall swept dorsal fin
+    ctx.moveTo(bL*0.06,-bH*0.72); ctx.lineTo(-bL*0.26,-bH*0.7-r*1.7); ctx.lineTo(-bL*0.16,-bH*0.72); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=finc; ctx.beginPath();                     // pectoral fin
+    ctx.moveTo(bL*0.22,bH*0.5); ctx.lineTo(bL*0.0,bH*0.55+r*1.2); ctx.lineTo(bL*0.3,bH*0.4); ctx.closePath(); ctx.fill();
+    const snout=bL*0.94;                                     // long torpedo body, pointed snout
+    const bg=ctx.createLinearGradient(0,-bH,0,bH); bg.addColorStop(0,body); bg.addColorStop(0.55,body); bg.addColorStop(1,belly);
+    ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(snout,0);
+    ctx.bezierCurveTo(bL*0.4,-bH,-bL*0.2,-bH*0.92,-bL*0.6,-bH*0.18);
+    ctx.bezierCurveTo(-bL*0.64,0,-bL*0.64,0,-bL*0.6,bH*0.18);
+    ctx.bezierCurveTo(-bL*0.2,bH*0.92,bL*0.4,bH,snout,0); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle=`hsl(${o.hue} 24% ${L-22}%)`; ctx.lineWidth=1/cam.zoom;   // gill slits
+    for(let k=0;k<4;k++){ const gx=bL*0.42-k*r*0.17; ctx.beginPath(); ctx.moveTo(gx,-bH*0.42); ctx.lineTo(gx-r*0.1,bH*0.12); ctx.stroke(); }
+    ctx.fillStyle='rgba(255,255,255,.9)';                    // teeth
+    for(let k=0;k<3;k++){ const x=snout-r*0.22-k*r*0.26; ctx.beginPath(); ctx.moveTo(x,bH*0.2); ctx.lineTo(x-1.2,bH*0.2+r*0.22); ctx.lineTo(x+1.2,bH*0.2); ctx.closePath(); ctx.fill(); }
+    const er=Math.max(1,r*0.1); ctx.fillStyle='#0a0f17'; ctx.beginPath(); ctx.arc(bL*0.56,-bH*0.32,er,0,TAU); ctx.fill();
+  } else { // 🐟 fish: sleeker & toothier with size+diet
     const bL=r*1.95, bH=r*0.9*lerp(1,0.78,clamp((sz-0.3)/0.6,0,1)), sw=beat*r*0.9*lerp(1,0.6,sz);
     const top=`hsl(${o.hue} 70% ${L+8}%)`, mid=`hsl(${o.hue} 70% ${L}%)`, sha=`hsl(${o.hue} 64% ${L-16}%)`, fin=`hsla(${o.hue} 65% ${L}% / .82)`;
     ctx.fillStyle=fin; ctx.beginPath(); ctx.moveTo(-bL*0.55,0);
@@ -498,18 +528,33 @@ function mmTo(mx,my){const {x,y,w,h}=mmRect();return {x:(mx-x)/w*W,y:(my-y)/h*H}
 let drag=null;
 cv.addEventListener('mousedown',e=>{const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top; if(inMM(mx,my)){const p=mmTo(mx,my);cam.x=p.x;cam.y=p.y;clampCam();drag={mm:true};return;} drag={mm:false,sx:mx,sy:my,cx:cam.x,cy:cam.y,moved:0};});
 window.addEventListener('mousemove',e=>{if(!drag)return;const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top; if(drag.mm){const p=mmTo(mx,my);cam.x=p.x;cam.y=p.y;clampCam();return;} const dx=mx-drag.sx,dy=my-drag.sy;drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));cam.x=drag.cx-dx/cam.zoom;cam.y=drag.cy-dy/cam.zoom;clampCam();});
-window.addEventListener('mouseup',e=>{if(drag&&!drag.mm&&drag.moved<5){const r=cv.getBoundingClientRect();const p=s2w(e.clientX-r.left,e.clientY-r.top);selected=pickAt(p.x,p.y);}drag=null;});
+window.addEventListener('mouseup',e=>{if(drag&&!drag.mm&&drag.moved<5){const r=cv.getBoundingClientRect();const p=s2w(e.clientX-r.left,e.clientY-r.top); if(placeBrush) spawnAt(p.x,p.y); else selected=pickAt(p.x,p.y);}drag=null;});
 cv.addEventListener('wheel',e=>{e.preventDefault();const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;const b=s2w(mx,my);cam.zoom=clamp(cam.zoom*Math.exp(-e.deltaY*(e.ctrlKey?0.012:0.0018)),cam.min,cam.max);const a=s2w(mx,my);cam.x+=b.x-a.x;cam.y+=b.y-a.y;clampCam();},{passive:false});
 let pinch=null; const txy=t=>{const r=cv.getBoundingClientRect();return{x:t.clientX-r.left,y:t.clientY-r.top};};
 cv.addEventListener('touchstart',e=>{if(e.touches.length===1){const p=txy(e.touches[0]);drag={mm:inMM(p.x,p.y),sx:p.x,sy:p.y,cx:cam.x,cy:cam.y,moved:0,t:performance.now()};if(drag.mm){const w=mmTo(p.x,p.y);cam.x=w.x;cam.y=w.y;clampCam();}}else if(e.touches.length>=2){drag=null;const a=txy(e.touches[0]),b=txy(e.touches[1]);pinch={d:Math.hypot(a.x-b.x,a.y-b.y),mx:(a.x+b.x)/2,my:(a.y+b.y)/2};}},{passive:false});
 cv.addEventListener('touchmove',e=>{e.preventDefault();if(e.touches.length>=2&&pinch){const a=txy(e.touches[0]),b=txy(e.touches[1]);const mx=(a.x+b.x)/2,my=(a.y+b.y)/2,d=Math.hypot(a.x-b.x,a.y-b.y)||1;const bf=s2w(mx,my);cam.zoom=clamp(cam.zoom*(d/pinch.d),cam.min,cam.max);const af=s2w(mx,my);cam.x+=bf.x-af.x;cam.y+=bf.y-af.y;cam.x-=(mx-pinch.mx)/cam.zoom;cam.y-=(my-pinch.my)/cam.zoom;clampCam();pinch.d=d;pinch.mx=mx;pinch.my=my;}else if(e.touches.length===1&&drag){const p=txy(e.touches[0]);if(drag.mm){const w=mmTo(p.x,p.y);cam.x=w.x;cam.y=w.y;clampCam();return;}const dx=p.x-drag.sx,dy=p.y-drag.sy;drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));cam.x=drag.cx-dx/cam.zoom;cam.y=drag.cy-dy/cam.zoom;clampCam();}},{passive:false});
-cv.addEventListener('touchend',e=>{if(drag&&!drag.mm&&drag.moved<6&&performance.now()-drag.t<300){const p=s2w(drag.sx,drag.sy);selected=pickAt(p.x,p.y);}if(e.touches.length<2)pinch=null;if(e.touches.length===0)drag=null;},{passive:false});
+cv.addEventListener('touchend',e=>{if(drag&&!drag.mm&&drag.moved<6&&performance.now()-drag.t<300){const p=s2w(drag.sx,drag.sy); if(placeBrush) spawnAt(p.x,p.y); else selected=pickAt(p.x,p.y);}if(e.touches.length<2)pinch=null;if(e.touches.length===0)drag=null;},{passive:false});
 $('k-mut').addEventListener('input',e=>world.mutRate=e.target.value/100);
 let simSpeed=3; $('k-spd').addEventListener('input',e=>{simSpeed=+e.target.value;$('spd-val').textContent='×'+simSpeed;});
 $('k-day').addEventListener('input',e=>{world.dayLen=+e.target.value;$('day-val').textContent=e.target.value;});
 let paused=false; $('b-pause').addEventListener('click',e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause';});
 $('b-reset').addEventListener('click',()=>{world=new World();world.dayLen=+$('k-day').value;world.mutRate=+$('k-mut').value/100;selected=null;});
 $('b-fit').addEventListener('click',()=>{cam.zoom=cam.min;cam.x=W/2;cam.y=H/2;});
+// ── place-animal brush ──
+let placeBrush=null;
+function spawnAt(wx,wy){ let o;
+  if(placeBrush==='seaweed') o=new Org(WEED,wx,wy);
+  else if(placeBrush==='plankton') o=new Org(PLANK,wx,wy);
+  else if(placeBrush==='grazer') o=new Org(FAUNA,wx,wy,{size:rnd(0.18,0.08),diet:rnd(0.1,0)});
+  else if(placeBrush==='fish') o=new Org(FAUNA,wx,wy,{size:rnd(0.5,0.35),diet:rnd(0.6,0.4)});
+  else if(placeBrush==='shark') o=new Org(FAUNA,wx,wy,{size:rnd(0.85,0.68),diet:rnd(0.95,0.78)});
+  if(o) world.orgs.push(o);
+}
+function setBrush(b){ placeBrush=b; cv.style.cursor=b?'crosshair':'grab';
+  document.querySelectorAll('.brush').forEach(el=>el.classList.toggle('active',el.dataset.b===b)); }
+document.querySelectorAll('.brush').forEach(el=>el.addEventListener('click',()=>setBrush(placeBrush===el.dataset.b?null:el.dataset.b)));
+$('b-brushoff').addEventListener('click',()=>setBrush(null));
+window.addEventListener('keydown',e=>{ if(e.key==='Escape') setBrush(null); });
 $('b-tree').addEventListener('click',()=>{treeOpen=true;$('tree').classList.add('open');sizeTree();});
 $('tree-close').addEventListener('click',()=>{treeOpen=false;$('tree').classList.remove('open');});
 window.addEventListener('resize',()=>{if(treeOpen)sizeTree();});
