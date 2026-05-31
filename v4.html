@@ -368,10 +368,10 @@ class World{
     // 雪花
     for(let i=snowflakes.length-1;i>=0;i--){ const s=snowflakes[i]; s.step();
       if(s.y>H-10||s.mass<0.01){ this.addDiss(s.x,clamp(s.y,H-10,H-5),s.mass*1.5); snowflakes.splice(i,1); } }
-    // 浮游從剩餘營養萌芽（加速）
-    if(this.tick%4===0){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>50){
+    // 浮游從剩餘營養萌芽（v3 標準）
+    if(this.tick%5===0){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>60){
       const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
-      const m=this.takeDiss(cx,cy,3); if(m>2) this.orgs.push(new Org(PLANK,clamp(cx,4,W-4),clamp(cy,4,H-4),{mass:m})); } }
+      const m=this.takeDiss(cx,cy,4); if(m>2) this.orgs.push(new Org(PLANK,clamp(cx,4,W-4),clamp(cy,4,H-4),{mass:m})); } }
     if(this.tick%200===0) this.safetyNets();
     if(this.tick%90===0) this.census();
   }
@@ -398,12 +398,11 @@ class World{
       const drop=new Set(dead.slice(0,this.species.length-170).map(s=>s.id)); this.species=this.species.filter(s=>!drop.has(s.id)); }
   }
   safetyNets(){
-    // 浮游安全網：極低時少量補充
+    // 浮游安全網：僅極低時少量補
     let plankCount=0;
     for(const o of this.orgs) if(o.kind===PLANK) plankCount++;
-    if(plankCount<60){
-      const need=Math.min(30,120-plankCount);
-      for(let n=0;n<need;n++){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>30){
+    if(plankCount<20){
+      for(let n=0;n<10;n++){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>30){
         const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
         const m=this.takeDiss(cx,cy,2);
         if(m>1) this.orgs.push(new Org(PLANK,clamp(cx,4,W-4),clamp(cy,4,H-4),{mass:m})); } }
@@ -444,13 +443,12 @@ class World{
       this.gen=Math.max(this.gen,o.gen+1); } }
   stepPlank(o,sun,detGrid,nb){
     o.dphase+=0.02; o.x+=Math.cos(o.dphase)*o.drift+0.06; o.y+=Math.sin(o.dphase*0.7)*o.drift; this.wrap(o);
-    o.mass+=this.takeDiss(o.x,o.y,0.6*sun);
+    o.mass+=this.takeDiss(o.x,o.y,0.5*sun);
     for(const d of detGrid.near(o.x,o.y)){ const dx=d.x-o.x,dy=d.y-o.y; if(dx*dx+dy*dy<36&&d.m>0){const t=Math.min(d.m,0.4);d.m-=t;o.mass+=t*0.7;this.addDiss(o.x,o.y,t*0.3);break;} }
-    const met=0.03+0.02*sun;
-    o.mass-=met; this.addDiss(o.x,o.y,met);
-    if(o.mass>18){this.addDiss(o.x,o.y,o.mass-18);o.mass=18;}
-    if(o.mass<=1.0){o.dead=true;return;}
-    if(o.mass>10 && this.orgs.length+nb.length<4000){ o.mass*=0.5;
+    o.mass-=0.045; this.addDiss(o.x,o.y,0.045);
+    if(o.mass>16){this.addDiss(o.x,o.y,o.mass-16);o.mass=16;}
+    if(o.mass<=1.4){o.dead=true;return;}
+    if(o.mass>11 && this.orgs.length+nb.length<3400){ o.mass*=0.5;
       nb.push(new Org(PLANK,o.x+rnd(12,-12),o.y+rnd(12,-12),{mass:o.mass,hue:(o.hue+rnd(10,-10)+360)%360,gen:o.gen+1,line:o.line})); this.gen=Math.max(this.gen,o.gen+1);} }
   stepFauna(o,foodGrid,detGrid,weedGrid,animGrid,schoolGrid,nb){
     if(o.age>o.maxAge){o.dead=true;return;}
