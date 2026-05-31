@@ -465,7 +465,6 @@ class World{
   stepFauna(o,foodGrid,detGrid,weedGrid,animGrid,schoolGrid,nb){
     if(o.age>o.maxAge){o.dead=true;return;}
     const sense=44+o.sense*150, S=sense;
-    const canPlants=o.diet<0.88, canMeat=o.size>0.2;
     const myR=o.r, full=o.mass>o.reproMass*0.95;
     // 魚群行為
     let schoolDX=0, schoolDY=0, schoolCount=0, schoolAlignX=0, schoolAlignY=0;
@@ -491,8 +490,8 @@ class World{
       for(const d of detGrid.near(o.x,o.y)){ const dx=d.x-o.x,dy=d.y-o.y,ds=Math.hypot(dx,dy); if(ds<ed){ed=ds;edx=dx;edy=dy;edT=d;} }
     }
     let prey=null,pd=S,pdx=0,pdy=0, threat=S,tx=0,ty=0;
-    if(canMeat||true){
-      const myClass=o.size<0.28?0:o.size<0.55?1:2; // 0=蝦 1=魚 2=鯊魚
+    {
+      const myClass=o.size<0.28?0:o.size<0.55?1:2;
       for(const a of animGrid.near(o.x,o.y)){ if(a===o||a.dead)continue;
         const dx=a.x-o.x,dy=a.y-o.y,d=Math.hypot(dx,dy); if(d>S)continue;
         if(myClass===2 && a.size>=0.28&&a.size<0.55 && a.r<myR*0.7){ if(d<pd){pd=d;pdx=dx;pdy=dy;prey=a;} } // 鯊魚吃魚
@@ -547,7 +546,7 @@ class World{
             const g=take*0.6*(1-o.diet*0.7); o.mass+=g; o.fitness+=g*0.2; o.feedCount++;
             this.addDetritus(o.x,o.y,(take-g)*0.6); this.addDiss(o.x,o.y,(take-g)*0.4); } } } }
     // 掠食
-    if(canMeat && prey && !prey.dead && !full){ const dx=prey.x-o.x,dy=prey.y-o.y, rr=myR+prey.r;
+    if(prey && !prey.dead && !full){ const dx=prey.x-o.x,dy=prey.y-o.y, rr=myR+prey.r;
       if(dx*dx+dy*dy<rr*rr){
         let safe=false;
         if(prey.size<0.3){
