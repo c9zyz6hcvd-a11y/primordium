@@ -810,21 +810,68 @@ const treeCanvas=document.getElementById('treecanvas'), tctx=treeCanvas.getConte
 function sizeTree(){ const r=treeCanvas.getBoundingClientRect(); treeCanvas.width=r.width*DPR; treeCanvas.height=r.height*DPR; tctx.setTransform(DPR,0,0,DPR,0,0); }
 function drawTree(){
   const w=treeCanvas.width/DPR, h=treeCanvas.height/DPR; tctx.clearRect(0,0,w,h);
-  const sp=world.species; if(!sp.length){ tctx.fillStyle='#56708a'; tctx.font='12px ui-monospace'; tctx.fillText('還沒有物種——讓它演化一會兒',16,28); return; }
-  const sorted=sp.slice().sort((a,b)=>a.born-b.born||a.hue-b.hue);
-  const padL=14,padR=70,padT=14,padB=22, rowH=Math.min(20,(h-padT-padB)/Math.max(1,sorted.length));
-  const t1=Math.max(world.tick,1), X=tk=>padL+tk/t1*(w-padL-padR);
-  const row=new Map(); sorted.forEach((s,i)=>row.set(s.id,i)); const Y=id=>padT+row.get(id)*rowH+rowH/2;
-  tctx.lineWidth=1.2;
-  for(const s of sorted){ if(s.parent!=null&&row.has(s.parent)){ const bx=X(s.born);
-    tctx.strokeStyle=`hsla(${s.hue} 60% 60% / .5)`; tctx.beginPath(); tctx.moveTo(bx,Y(s.parent)); tctx.lineTo(bx,Y(s.id)); tctx.stroke(); } }
-  for(const s of sorted){ const y=Y(s.id), bx=X(s.born), ex=X(s.died===null?world.tick:s.died), live=s.died===null;
-    tctx.strokeStyle=`hsl(${s.hue} 70% ${live?58:34}%)`; tctx.lineWidth=Math.max(2.5,rowH*0.5); tctx.lineCap='round';
-    tctx.beginPath(); tctx.moveTo(bx,y); tctx.lineTo(Math.max(ex,bx+2),y); tctx.stroke();
-    tctx.fillStyle=`hsl(${s.hue} 70% 70%)`; tctx.beginPath(); tctx.arc(bx,y,Math.max(1.6,rowH*0.22),0,TAU); tctx.fill();
-    if(live&&rowH>9){ const ic=s.size<0.28?'🦐':s.size<0.55?'🐟':'🦈'; tctx.font='10px ui-monospace'; tctx.fillStyle='#cfe'; tctx.fillText(`${ic}${s.pop}`, Math.max(ex,bx+2)+5, y+3); } }
-  tctx.fillStyle='#56708a'; tctx.font='10px ui-monospace';
-  tctx.fillText('始祖',padL,h-7); tctx.fillText('現在 →',w-padR-26,h-7); tctx.fillText(sorted.length+' 種已記錄',w/2-52,h-7);
+  const sp=world.species; if(!sp.length){ tctx.fillStyle='#56708a'; tctx.font='12px ui-monospace'; tctx.fillText('還沒有物種⋯',16,28); return; }
+  // 建立譜系家族：從始祖開始，分支出所有後代
+  const roots=sp.filter(s=>s.parent===null);
+  if(!roots.length){ tctx.fillStyle='#56708a'; tctx.font='12px ui-monospace'; tctx.fillText('等待始祖物種⋯',16,28); return; }
+  const padL=20,padR=20,padT=32,padB=50;
+  const t1=Math.max(world.tick,1);
+  // 用 DFS 計算每棵子樹的寬度，做放射狀布局
+  function layoutTree(speciesList){
+    const children=new Map(); for(const s of speciesList){if(s.parent!=null){const c=children.get(s.parent)||[];c.push(s);children.set(s.parent,c);}}
+    const widthMap=new Map();
+    function calcW(id){let cw=0;for(const c of children.get(id)||[]){cw+=Math.max(1,calcW(c.id));}const w2=Math.max(1,cw);widthMap.set(id,w2);return w2;}
+    for(const r of roots) calcW(r.id);
+    const totalW=roots.reduce((a,r)=>a+widthMap.get(r.id),0);
+    const xPos=new Map();
+    function place(id,xOff,parentW){
+      const myW=widthMap.get(id)||1; const myC=children.get(id)||[];
+      if(!myC.length){xPos.set(id,xOff+myW/2);return;}
+      let cx=xOff; const cw=myC.reduce((a,c)=>a+widthMap.get(c.id),0);
+      for(const c of myC){const ch=widthMap.get(c.id);place(c.id,cx,ch);cx+=ch;}
+      xPos.set(id,xOff+myW/2);
+    }
+    let curX=0; for(const r of roots){place(r.id,curX,widthMap.get(r.id));curX+=widthMap.get(r.id);}
+    return {xPos,children,widthMap,totalW};
+  }
+  const tree=layoutTree(sp);
+  const totalTreeW=tree.totalW;
+  // Y=時間(由下往上), X=放射狀展開
+  const yTime=tick=>padT+(1-tick/t1)*(h-padT-padB);
+  const xPos=id=>padL+(tree.xPos.get(id)/totalTreeW)*(w-padL-padR);
+  // 先畫連接線（從父母的死亡時間點分岔到孩子的出生時間點）
+  for(const s of sp){ if(s.parent===null)continue;
+    const px=xPos(s.parent),cx=xPos(s.id);
+    // 父母在子代出生時的位置(同一時間點因為是分岔)
+    const branchY=yTime(s.born);
+    const deadY=yTime(s.died===null?world.tick:s.died);
+    tctx.strokeStyle=`hsla(${s.hue} 60% 60% / .5)`;
+    tctx.lineWidth=1.2; tctx.setLineDash([2,3]);
+    tctx.beginPath(); tctx.moveTo(px,branchY); tctx.lineTo(cx,branchY);
+    tctx.stroke(); tctx.setLineDash([]);
+  }
+  // 畫物種水平壽命條
+  for(const s of sp){
+    const x=xPos(s.id), y1=yTime(s.born), y2=yTime(s.died===null?world.tick:s.died);
+    const live=s.died===null;
+    tctx.strokeStyle=`hsl(${s.hue} 70% ${live?58:34}%)`;
+    tctx.lineWidth=Math.max(3,6);
+    tctx.lineCap='round'; tctx.beginPath(); tctx.moveTo(x,y1); tctx.lineTo(x,Math.max(y2,y1+2)); tctx.stroke();
+    if(live){
+      tctx.fillStyle=`hsl(${s.hue} 70% 75%)`;
+      tctx.beginPath(); tctx.arc(x,y1,4,0,TAU); tctx.fill();
+      const ic=s.size<0.28?'🦐':s.size<0.55?'🐟':'🦈';
+      tctx.font='9px ui-monospace'; tctx.fillStyle='#cfe';
+      tctx.fillText(`${ic}${s.pop}`,x+6,y1+3);
+    }else{
+      tctx.fillStyle=`hsla(${s.hue} 40% 40% / .5)`;
+      tctx.beginPath(); tctx.arc(x,y1,2,0,TAU); tctx.fill();
+    }
+  }
+  tctx.fillStyle='#56708a'; tctx.font='10px ui-monospace'; tctx.textAlign='center';
+  tctx.fillText('← 時間 ↑',w/2,h-8);
+  tctx.fillText(roots.length+' 支譜系 · '+sp.length+' 物種',w/2,16);
+  tctx.textAlign='left';
 }
 let treeOpen=false;
 
