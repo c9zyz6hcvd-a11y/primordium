@@ -22,6 +22,15 @@
     padding:6px 11px;border-radius:7px;font:inherit;cursor:pointer;backdrop-filter:blur(4px)}
   .panel-toggle:hover{border-color:var(--accent);color:var(--accent)}
   #side.hidden{display:none}
+  .tree-panel{position:absolute;inset:0;background:rgba(5,8,13,.94);z-index:8;
+    display:none;flex-direction:column;padding:12px}
+  .tree-panel.open{display:flex}
+  .tree-head{display:flex;justify-content:space-between;align-items:center;
+    color:var(--dim);font-size:12px;margin-bottom:8px}
+  .tree-head b{color:var(--accent);letter-spacing:.1em}
+  .tree-head button{flex:none;width:auto;padding:5px 10px}
+  #treecanvas{flex:1;width:100%;min-height:0;background:#070a0f;
+    border:1px solid var(--line);border-radius:8px}
   #side{width:312px;background:linear-gradient(180deg,#0d131c,#0a0f17);
     border-left:1px solid var(--line);padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
   h1{font-size:15px;letter-spacing:.18em;margin:0;color:var(--accent);text-transform:uppercase}
@@ -54,6 +63,13 @@
 <div id="wrap">
   <div id="stage"><canvas id="c"></canvas>
     <button id="b-toggle" class="panel-toggle">hide stats ›</button>
+    <div id="tree" class="tree-panel">
+      <div class="tree-head">
+        <span><b>SPECIES FAMILY TREE</b> &nbsp;· colour = species hue · ← time → · branches = where a lineage split off</span>
+        <button id="tree-close">close ✕</button>
+      </div>
+      <canvas id="treecanvas"></canvas>
+    </div>
   </div>
   <aside id="side">
     <div>
@@ -109,6 +125,9 @@
       <div style="color:#56708a;font-size:10px">scroll = zoom · drag = pan · click = inspect · use the minimap to fly around</div>
     </div>
 
+    <div class="row">
+      <button id="b-tree">🌳 Family tree</button>
+    </div>
     <div class="row">
       <button id="b-pause">Pause</button>
       <button id="b-seedp">Seed predators</button>
@@ -273,6 +292,7 @@ class Org{
         const gain=(o.energy*0.7 + o.r*2.6 + 26)*(0.3 + 0.9*this.g.dietGene);
         this.energy=Math.min(MAX_E,this.energy+gain);
         o.dead=true; world.kills++;
+        spawnDebris(o.x,o.y,o.g.hue,o.r);   // 💥 chunks fly off the eaten prey
       }
     }
     const ca=Math.cos(this.a), sa=Math.sin(this.a);
@@ -366,14 +386,28 @@ class World{
     this.tick=0; this.births=0; this.deaths=0; this.matings=0; this.kills=0;
     this.peakGen=0; this.foodRate=0.55; this.mutationRate=0.30;
     this.sustainPred=true; this.history=[];
+    // phylogeny: species = colour clusters tracked over time, with parent links
+    this.species=[{id:0,hue:0,parent:null,born:0,died:null,pop:0,max:0,_miss:0,_seen:true}];
+    this.nextSid=1;
     // pheromone field
     this.pcs=34; this.pcols=Math.ceil(W/this.pcs)+1; this.prows=Math.ceil(H/this.pcs)+1;
     this.phero=new Float32Array(this.pcols*this.prows);
     // shelters — safe reefs where small organisms cannot be eaten
     this.shelters=[];
-    for(let i=0;i<7;i++) this.shelters.push({x:rnd(W*0.86,W*0.14),y:rnd(H*0.86,H*0.14),r:rnd(170,110)});
+    for(let i=0;i<7;i++){
+      const s={x:rnd(W*0.86,W*0.14),y:rnd(H*0.86,H*0.14),r:rnd(170,110),kelp:[]};
+      const nb=10+((s.r/22)|0);
+      for(let k=0;k<nb;k++){
+        const a=rnd(TAU), rr=Math.sqrt(Math.random())*s.r*0.82;
+        s.kelp.push({x:s.x+Math.cos(a)*rr, y:s.y+Math.sin(a)*rr,
+          len:rnd(s.r*0.55,s.r*0.22), ang:rnd(TAU), seg:5+((Math.random()*3)|0),
+          phase:rnd(TAU), hue:rnd(165,115), sway:rnd(0.9,0.4)});
+      }
+      this.shelters.push(s);
+    }
     // ONE common ancestor — whole population are its near-identical clones
     this.ancestor=ancestorGenome();
+    this.species[0].hue=this.ancestor.hue;
     NEXT_LINE=1;
     for(let i=0;i<260;i++){
       const g=mutate(this.ancestor, 0.06);     // tiny variation to select on
@@ -473,6 +507,42 @@ class World{
       if(carn<8) this.seedPredators(8,true);
     }
     if(this.tick%6===0) this.sample();
+    if(this.tick%80===0) this.census();
+  }
+  census(){
+    // cluster current population by hue, track species birth/death/parent over time
+    const NB=24, bw=360/NB, MIN=14;
+    const cnt=new Array(NB).fill(0), hc=new Array(NB).fill(0), hs=new Array(NB).fill(0);
+    for(const o of this.orgs){ const b=((o.g.hue/bw)|0)%NB; cnt[b]++;
+      hc[b]+=Math.cos(o.g.hue*Math.PI/180); hs[b]+=Math.sin(o.g.hue*Math.PI/180); }
+    // merge adjacent qualifying bins (circular) into clusters
+    const qual=cnt.map(c=>c>=MIN), seen=new Array(NB).fill(false), clusters=[];
+    for(let i=0;i<NB;i++){
+      if(!qual[i]||seen[i]) continue;
+      let pop=0,cc=0,ss=0,j=i,steps=0;
+      while(steps<NB && qual[j%NB] && !seen[j%NB]){ const b=j%NB; seen[b]=true; pop+=cnt[b]; cc+=hc[b]; ss+=hs[b]; j++; steps++; }
+      clusters.push({hue:(Math.atan2(ss,cc)*180/Math.PI+360)%360, pop});
+    }
+    const alive=this.species.filter(s=>s.died===null);
+    for(const s of alive) s._seen=false;
+    for(const cl of clusters){
+      let best=null,bd=1e9;
+      for(const s of alive){ const d=hueDist(s.hue,cl.hue); if(d<22 && d<bd){bd=d;best=s;} }
+      if(best){ best._seen=true; best.hue=cl.hue; best.pop=cl.pop; best.max=Math.max(best.max,cl.pop); }
+      else{
+        let par=null,pd=1e9;
+        for(const s of alive){ const d=hueDist(s.hue,cl.hue); if(d<48 && d<pd){pd=d;par=s;} }
+        const ns={id:this.nextSid++,hue:cl.hue,parent:par?par.id:null,born:this.tick,died:null,pop:cl.pop,max:cl.pop,_miss:0,_seen:true};
+        this.species.push(ns); alive.push(ns);
+      }
+    }
+    for(const s of alive){ if(s._seen) s._miss=0; else if(++s._miss>=3) s.died=this.tick; }
+    // prune very old extinct species so the list stays bounded
+    if(this.species.length>160){
+      const dead=this.species.filter(s=>s.died!==null).sort((a,b)=>a.died-b.died);
+      const drop=new Set(dead.slice(0,this.species.length-160).map(s=>s.id));
+      this.species=this.species.filter(s=>!drop.has(s.id));
+    }
   }
   sample(){
     let s=0,z=0,e=0,c=0,n=this.orgs.length||1;
@@ -486,7 +556,18 @@ let world=new World();
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
 let selected=null, showPhero=true, highlightPred=true;
+let particles=[], lastT=performance.now();
+function spawnDebris(x,y,hue,r,n=9){
+  for(let i=0;i<n;i++){
+    const a=rnd(TAU), sp=rnd(70,18);
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      life:rnd(0.85,0.4),max:0.85,r:rnd(Math.max(1.4,r*0.45),1.1),hue});
+  }
+  if(particles.length>600) particles.splice(0,particles.length-600);
+}
 function draw(){
+  const now=performance.now(), dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
+  const kt=now*0.001;
   ctx.fillStyle='#05080d'; ctx.fillRect(0,0,CW,CH);
   ctx.save();
   ctx.translate(CW/2,CH/2); ctx.scale(cam.zoom,cam.zoom); ctx.translate(-cam.x,-cam.y);
@@ -508,6 +589,27 @@ function draw(){
     ctx.strokeStyle='rgba(86,210,150,.30)'; ctx.lineWidth=1.5/cam.zoom;
     ctx.setLineDash([7/cam.zoom,7/cam.zoom]);
     ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,TAU); ctx.stroke(); ctx.setLineDash([]);
+    // 🌿 swaying kelp
+    ctx.lineCap='round';
+    for(const k of s.kelp){
+      ctx.strokeStyle=`hsla(${k.hue} 55% 42% / .55)`; ctx.lineWidth=2.4/cam.zoom;
+      ctx.beginPath();
+      for(let i=0;i<=k.seg;i++){
+        const u=i/k.seg;
+        const sway=Math.sin(kt*k.sway*2 + k.phase + u*2.2)*k.len*0.26*u;
+        const px=k.x+Math.cos(k.ang)*k.len*u + Math.cos(k.ang+1.5708)*sway;
+        const py=k.y+Math.sin(k.ang)*k.len*u + Math.sin(k.ang+1.5708)*sway;
+        i?ctx.lineTo(px,py):ctx.moveTo(px,py);
+      }
+      ctx.stroke();
+      // frond tip
+      const u=1, sway=Math.sin(kt*k.sway*2 + k.phase + u*2.2)*k.len*0.26;
+      ctx.fillStyle=`hsla(${k.hue} 60% 55% / .5)`;
+      ctx.beginPath();
+      ctx.arc(k.x+Math.cos(k.ang)*k.len+Math.cos(k.ang+1.5708)*sway,
+              k.y+Math.sin(k.ang)*k.len+Math.sin(k.ang+1.5708)*sway, 2.2/cam.zoom,0,TAU);
+      ctx.fill();
+    }
   }
 
   // pheromone haze (culled)
@@ -536,6 +638,15 @@ function draw(){
     if(o.x<vx0||o.x>vx1||o.y<vy0||o.y>vy1) continue;
     drawCreature(o,t);
   }
+  // 💥 debris particles (real-time, so they look smooth at any sim speed)
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.life-=dt; if(p.life<=0){ particles.splice(i,1); continue; }
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.90; p.vy*=0.90;
+    const a=clamp(p.life/p.max,0,1);
+    ctx.fillStyle=`hsla(${p.hue} 75% 62% / ${a})`;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r*(0.4+a*0.7),0,TAU); ctx.fill();
+  }
   ctx.restore();
   drawMinimap();
 }
@@ -561,6 +672,50 @@ function drawMinimap(){
                  (CW/cam.zoom)*sx, (CH/cam.zoom)*sy);
   ctx.strokeStyle='#1b2738'; ctx.strokeRect(x,y,w,h);
   ctx.restore();
+}
+
+// 🌳 species family tree — lifespan bars by time, branches to parent species
+const treeCanvas=document.getElementById('treecanvas'), tctx=treeCanvas.getContext('2d');
+function sizeTree(){ const r=treeCanvas.getBoundingClientRect();
+  treeCanvas.width=r.width*DPR; treeCanvas.height=r.height*DPR; tctx.setTransform(DPR,0,0,DPR,0,0); }
+function drawTree(){
+  const w=treeCanvas.width/DPR, h=treeCanvas.height/DPR;
+  tctx.clearRect(0,0,w,h);
+  const sp=world.species.filter(s=>s.max>0 || s.id===0);
+  if(!sp.length){ return; }
+  const sorted=sp.slice().sort((a,b)=> a.born-b.born || a.hue-b.hue);
+  const padL=14,padR=14,padT=14,padB=24;
+  const rowH=Math.min(22,(h-padT-padB)/Math.max(1,sorted.length));
+  const t1=Math.max(world.tick,1);
+  const X=tk=> padL + tk/t1*(w-padL-padR);
+  const row=new Map(); sorted.forEach((s,i)=>row.set(s.id,i));
+  const Y=id=> padT + row.get(id)*rowH + rowH/2;
+  // branch connectors
+  tctx.lineWidth=1.2;
+  for(const s of sorted){
+    if(s.parent!=null && row.has(s.parent)){
+      const bx=X(s.born);
+      tctx.strokeStyle=`hsla(${s.hue} 60% 60% / .5)`;
+      tctx.beginPath(); tctx.moveTo(bx,Y(s.parent)); tctx.lineTo(bx,Y(s.id)); tctx.stroke();
+    }
+  }
+  // lifespan bars
+  for(const s of sorted){
+    const y=Y(s.id), bx=X(s.born), ex=X(s.died===null?world.tick:s.died);
+    const alive=s.died===null;
+    tctx.strokeStyle=`hsl(${s.hue} 70% ${alive?58:34}%)`;
+    tctx.lineWidth=Math.max(2.5,rowH*0.5); tctx.lineCap='round';
+    tctx.beginPath(); tctx.moveTo(bx,y); tctx.lineTo(Math.max(ex,bx+2),y); tctx.stroke();
+    tctx.fillStyle=`hsl(${s.hue} 70% 70%)`;
+    tctx.beginPath(); tctx.arc(bx,y,Math.max(1.6,rowH*0.22),0,TAU); tctx.fill();
+    if(alive && rowH>9){ tctx.fillStyle=`hsl(${s.hue} 70% 75%)`; tctx.font='10px ui-monospace';
+      tctx.fillText('●'+s.pop, Math.max(ex,bx+2)+5, y+3); }
+  }
+  // time axis label
+  tctx.fillStyle='#56708a'; tctx.font='10px ui-monospace';
+  tctx.fillText('founder', padL, h-8);
+  tctx.fillText('now →', w-padR-34, h-8);
+  tctx.fillText(sorted.length+' species tracked', w/2-50, h-8);
 }
 
 // life-form classification used for both the skin and the inspector
@@ -877,6 +1032,10 @@ $('b-zin').addEventListener('click',()=>{cam.zoom=clamp(cam.zoom*1.35,cam.min,ca
 $('b-zout').addEventListener('click',()=>{cam.zoom=clamp(cam.zoom/1.35,cam.min,cam.max);clampCam();});
 $('b-fit').addEventListener('click',()=>{cam.zoom=cam.min;cam.x=W/2;cam.y=H/2;});
 $('b-seedp').addEventListener('click',()=>world.seedPredators());
+let treeOpen=false;
+$('b-tree').addEventListener('click',()=>{ treeOpen=true; $('tree').classList.add('open'); sizeTree(); });
+$('tree-close').addEventListener('click',()=>{ treeOpen=false; $('tree').classList.remove('open'); });
+window.addEventListener('resize',()=>{ if(treeOpen) sizeTree(); });
 let paused=false;
 $('b-pause').addEventListener('click',e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause';});
 $('b-cull').addEventListener('click',()=>world.cataclysm());
@@ -893,6 +1052,7 @@ function loop(){
     updateHUD(); drawSpark();
     if(selected && !selected.dead && world.orgs.indexOf(selected)>=0) $('inspect').innerHTML=inspectHTML(selected);
   }
+  if(treeOpen && frame%3===0) drawTree();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
