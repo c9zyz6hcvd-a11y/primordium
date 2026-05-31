@@ -308,7 +308,7 @@ class World{
     // 生物種子
     for(let b=0;b<24;b++){ const cx=rnd(W*0.9,W*0.1),cy=rnd(H*0.9,H*0.1),n=6+((Math.random()*7)|0);
       for(let k=0;k<n;k++) this.orgs.push(new Org(WEED,cx+rnd(90,-90),cy+rnd(90,-90))); }
-    for(let i=0;i<1400;i++) this.orgs.push(new Org(PLANK,rnd(W),rnd(H)));
+    for(let i=0;i<2200;i++) this.orgs.push(new Org(PLANK,rnd(W),rnd(H)));
     for(let i=0;i<460;i++) this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.22,0.05),diet:rnd(0.18,0)}));
     for(let i=0;i<45;i++)  this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.5,0.3),diet:rnd(0.6,0.35)}));
     for(let i=0;i<7;i++)   this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.85,0.62),diet:rnd(0.95,0.7)}));
@@ -400,11 +400,10 @@ class World{
     let grazers=0, mids=0, apex=0;
     for(const o of this.orgs) if(o.kind===FAUNA){ if(o.size<0.28)grazers++; else if(o.size<0.55)mids++; else apex++; }
     if(grazers<80){
-      const planks=this.orgs.filter(o=>o.kind===PLANK&&!o.dead&&o.mass>0.5); let made=0,idx=0;
-      while(made<16&&idx<planks.length){ const seed=planks[idx]; idx+=17; if(!seed||seed.dead){continue;}
-        let m=0; for(const p of this.grid.near(seed.x,seed.y)){ if(p.kind===PLANK&&!p.dead&&p.mass>0){m+=p.mass;p.mass=0;p.dead=true;if(m>=26)break;} }
-        m+=this.takeDiss(seed.x,seed.y,Math.max(0,26-m));
-        if(m>12){ this.orgs.push(new Org(FAUNA,seed.x,seed.y,{size:rnd(0.18,0.05),diet:rnd(0.12,0),mass:m})); made++; } } }
+      for(let n=0;n<Math.min(40,80-grazers);n++){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>25){
+        const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
+        const m=this.takeDiss(cx,cy,8); if(m>4) this.orgs.push(new Org(FAUNA,clamp(cx,4,W-4),clamp(cy,4,H-4),{size:rnd(0.18,0.05),diet:rnd(0.12,0),mass:m})); } }
+    }
     if(mids<22){
       const gs=this.orgs.filter(o=>o.kind===FAUNA&&o.size<0.28&&o.mass>o.reproMass*0.55).sort((a,b)=>b.mass-a.mass);
       for(let n=0;n<Math.min(10,gs.length);n++){ const o=gs[n];
@@ -426,12 +425,14 @@ class World{
       nb.push(new Org(WEED,o.x+rnd(70,-70),o.y+rnd(70,-70),{mass:o.mass,hue:(o.hue+rnd(8,-8)+360)%360,gen:o.gen+1,line:o.line})); this.gen=Math.max(this.gen,o.gen+1);} }
   stepPlank(o,sun,detGrid,nb){
     o.dphase+=0.02; o.x+=Math.cos(o.dphase)*o.drift+0.06; o.y+=Math.sin(o.dphase*0.7)*o.drift; this.wrap(o);
-    o.mass+=this.takeDiss(o.x,o.y,0.5*sun);
+    o.mass+=this.takeDiss(o.x,o.y,0.6*sun);
     for(const d of detGrid.near(o.x,o.y)){ const dx=d.x-o.x,dy=d.y-o.y; if(dx*dx+dy*dy<36&&d.m>0){const t=Math.min(d.m,0.4);d.m-=t;o.mass+=t*0.7;this.addDiss(o.x,o.y,t*0.3);break;} }
-    o.mass-=0.045; this.addDiss(o.x,o.y,0.045);
-    if(o.mass>16){this.addDiss(o.x,o.y,o.mass-16);o.mass=16;}
-    if(o.mass<=1.4){o.dead=true;return;}
-    if(o.mass>8 && this.orgs.length+nb.length<3800){ o.mass*=0.5;
+    // 夜間代謝降低（晚上海水冷，浮游省體力）
+    const met=0.025+0.025*(1-sun*0.6);
+    o.mass-=met; this.addDiss(o.x,o.y,met);
+    if(o.mass>24){this.addDiss(o.x,o.y,o.mass-24);o.mass=24;}
+    if(o.mass<=0.8){o.dead=true;return;}
+    if(o.mass>6 && this.orgs.length+nb.length<4500){ o.mass*=0.5;
       nb.push(new Org(PLANK,o.x+rnd(12,-12),o.y+rnd(12,-12),{mass:o.mass,hue:(o.hue+rnd(10,-10)+360)%360,gen:o.gen+1,line:o.line})); this.gen=Math.max(this.gen,o.gen+1);} }
   stepFauna(o,foodGrid,detGrid,weedGrid,animGrid,schoolGrid,nb){
     if(o.age>o.maxAge){o.dead=true;return;}
