@@ -87,10 +87,24 @@
       <label class="ctrl">Sim speed <span class="v" id="spd-val">×3</span>
         <input id="k-spd" type="range" min="1" max="40" value="3"></label>
       <label class="ctrl"><input id="k-phero" type="checkbox" checked style="width:auto;display:inline"> show pheromones</label>
+      <label class="ctrl"><input id="k-pred" type="checkbox" checked style="width:auto;display:inline"> highlight predators (red ring)</label>
+    </div>
+
+    <div class="card">
+      <h2>Camera</h2>
+      <div class="row" style="margin-bottom:6px">
+        <button id="b-zout">– zoom out</button>
+        <button id="b-zin">+ zoom in</button>
+        <button id="b-fit">Fit all</button>
+      </div>
+      <div style="color:#56708a;font-size:10px">scroll = zoom · drag = pan · click = inspect · use the minimap to fly around</div>
     </div>
 
     <div class="row">
       <button id="b-pause">Pause</button>
+      <button id="b-seedp">Seed predators</button>
+    </div>
+    <div class="row">
       <button id="b-cull">Cataclysm</button>
       <button id="b-reset">New ancestor</button>
     </div>
@@ -117,19 +131,28 @@
 
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
-let W=0,H=0,DPR=Math.min(2,window.devicePixelRatio||1);
+let DPR=Math.min(2,window.devicePixelRatio||1);
+// World is a large fixed arena, viewed through a movable/zoomable camera.
+const W=2800, H=1900;                 // logical world size (the "map")
+let CW=0, CH=0;                       // canvas viewport size (CSS px)
+const cam={x:W/2, y:H/2, zoom:1, min:0.25, max:5}; // zoom 1 = creatures clearly visible; "Fit all" shows whole map
 function resize(){
   const r = cv.parentElement.getBoundingClientRect();
-  W=r.width; H=r.height;
-  cv.width=W*DPR; cv.height=H*DPR;
+  CW=r.width; CH=r.height;
+  cv.width=CW*DPR; cv.height=CH*DPR;
   ctx.setTransform(DPR,0,0,DPR,0,0);
+  cam.min=Math.min(CW/W, CH/H)*0.9;   // never zoom out past whole map
+  cam.zoom=clamp(cam.zoom, cam.min, cam.max);
 }
-window.addEventListener('resize',resize); resize();
+const clampCam=()=>{ cam.zoom=clamp(cam.zoom,cam.min,cam.max);
+  cam.x=clamp(cam.x,0,W); cam.y=clamp(cam.y,0,H); };
+const screenToWorld=(mx,my)=>({x:cam.x+(mx-CW/2)/cam.zoom, y:cam.y+(my-CH/2)/cam.zoom});
 
 const rnd=(a=1,b=0)=>b+Math.random()*(a-b);
 const clamp=(x,a,b)=>x<a?a:x>b?b:x;
 const TAU=Math.PI*2;
 const hueDist=(a,b)=>{let d=Math.abs(a-b)%360; return d>180?360-d:d;};
+window.addEventListener('resize',resize); resize();
 
 // ── Neural network ──────────────────────────────────────────────────────────
 // 10 sensors → 10 hidden → 3 actuators, tanh. Genome = flat weight vector.
@@ -236,8 +259,8 @@ class Org{
       if(d>this.sense) continue;
       if(o.r > this.r*1.15){ if(d<td){td=d;tdx=dx;tdy=dy;} }
       else if(o.r < this.r*0.87){ if(d<pd){pd=d;pdx=dx;pdy=dy;prey=o;} }
-      // ---- predation: contact with a smaller organism ----
-      if(o.r < this.r*0.82 && d < this.r){
+      // ---- predation: contact with a smaller organism (prey safe inside shelter) ----
+      if(o.r < this.r*0.82 && d < this.r && !world.inShelter(o.x,o.y)){
         const gain=(o.energy*0.55 + o.r*2 + 12)*(0.25 + 0.75*this.g.dietGene);
         this.energy=Math.min(MAX_E,this.energy+gain);
         o.dead=true; world.kills++;
@@ -333,16 +356,32 @@ class World{
     // pheromone field
     this.pcs=34; this.pcols=Math.ceil(W/this.pcs)+1; this.prows=Math.ceil(H/this.pcs)+1;
     this.phero=new Float32Array(this.pcols*this.prows);
+    // shelters — safe reefs where small organisms cannot be eaten
+    this.shelters=[];
+    for(let i=0;i<7;i++) this.shelters.push({x:rnd(W*0.86,W*0.14),y:rnd(H*0.86,H*0.14),r:rnd(170,110)});
     // ONE common ancestor — whole population are its near-identical clones
     this.ancestor=ancestorGenome();
     NEXT_LINE=1;
-    for(let i=0;i<80;i++){
+    for(let i=0;i<260;i++){
       const g=mutate(this.ancestor, 0.06);     // tiny variation to select on
       this.orgs.push(new Org(g,rnd(W),rnd(H),0,1)); // all share lineage #1
     }
-    for(let i=0;i<260;i++) this.spawnFood();
+    for(let i=0;i<1700;i++) this.spawnFood();
   }
-  spawnFood(){this.food.push({x:rnd(W),y:rnd(H),e:34+rnd(20)});}
+  inShelter(x,y){
+    for(const s of this.shelters){const dx=x-s.x,dy=y-s.y; if(dx*dx+dy*dy<s.r*s.r) return true;}
+    return false;
+  }
+  spawnFood(){
+    // a third of food grows inside shelters → safe feeding grounds for prey
+    if(Math.random()<0.33 && this.shelters.length){
+      const s=this.shelters[(Math.random()*this.shelters.length)|0];
+      const a=rnd(TAU), rr=Math.sqrt(Math.random())*s.r*0.9;
+      this.food.push({x:s.x+Math.cos(a)*rr, y:s.y+Math.sin(a)*rr, e:34+rnd(20)});
+    }else{
+      this.food.push({x:rnd(W),y:rnd(H),e:34+rnd(20)});
+    }
+  }
   eat(f){const i=this.food.indexOf(f); if(i>=0)this.food.splice(i,1);}
   pIdx(x,y){const c=clamp((x/this.pcs)|0,0,this.pcols-1),r=clamp((y/this.pcs)|0,0,this.prows-1);return r*this.pcols+c;}
   depositPhero(x,y,a){this.phero[this.pIdx(x,y)]=Math.min(3,this.phero[this.pIdx(x,y)]+a);}
@@ -352,9 +391,23 @@ class World{
     const keep=Math.max(6,(this.orgs.length*0.3)|0);
     this.deaths+=this.orgs.length-keep; this.orgs.length=keep;
   }
+  seedPredators(){            // inject a pod of large reddish carnivores
+    for(let i=0;i<14;i++){
+      const g=mutate(this.ancestor,0.12);
+      g.dietGene=rnd(1,0.75); g.sizeGene=rnd(1,0.72); g.speedGene=rnd(1,0.5);
+      g.hue=rnd(28,0);        // red family
+      const o=new Org(g,rnd(W),rnd(H),0,NEXT_LINE++);
+      o.age=320; o.energy=210; // born adult so they can hunt right away
+      this.orgs.push(o);
+    }
+  }
   step(){
     this.tick++;
-    if(this.food.length < 80+this.foodRate*420 && Math.random()<this.foodRate) this.spawnFood();
+    const foodTarget=900+this.foodRate*3000;
+    if(this.food.length<foodTarget){
+      const n=this.food.length<foodTarget*0.7?6:2;   // refill faster when scarce
+      for(let i=0;i<n;i++) if(Math.random()<this.foodRate+0.3) this.spawnFood();
+    }
     // decay pheromone field
     const ph=this.phero; for(let i=0;i<ph.length;i++) ph[i]*=0.955;
     // rebuild spatial hashes
@@ -367,7 +420,7 @@ class World{
       if(o.dead) continue;
       o.step(this);
       if(o.dead) continue;
-      if(o.energy>REPRO_E && this.orgs.length+newborns.length<460 && !mated.has(o)){
+      if(o.energy>REPRO_E && this.orgs.length+newborns.length<1100 && !mated.has(o)){
         // find a fertile, SIMILAR-COLOURED partner → speciation barrier
         let mate=null, md=46*46;
         for(const p of this.orgGrid.near(o.x,o.y)){
@@ -412,25 +465,82 @@ class World{
 let world=new World();
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
-let selected=null, showPhero=true;
+let selected=null, showPhero=true, highlightPred=true;
 function draw(){
+  ctx.fillStyle='#05080d'; ctx.fillRect(0,0,CW,CH);
+  ctx.save();
+  ctx.translate(CW/2,CH/2); ctx.scale(cam.zoom,cam.zoom); ctx.translate(-cam.x,-cam.y);
+  // view bounds (cull anything off-screen)
+  const m=50/cam.zoom;
+  const vx0=cam.x-(CW/2)/cam.zoom-m, vx1=cam.x+(CW/2)/cam.zoom+m;
+  const vy0=cam.y-(CH/2)/cam.zoom-m, vy1=cam.y+(CH/2)/cam.zoom+m;
+
+  // world floor + border
   ctx.fillStyle='#070a0f'; ctx.fillRect(0,0,W,H);
-  // pheromone haze
+  ctx.strokeStyle='#1b2738'; ctx.lineWidth=2/cam.zoom; ctx.strokeRect(0,0,W,H);
+
+  // shelters (safe reefs)
+  for(const s of world.shelters){
+    if(s.x+s.r<vx0||s.x-s.r>vx1||s.y+s.r<vy0||s.y-s.r>vy1) continue;
+    const g=ctx.createRadialGradient(s.x,s.y,s.r*0.15,s.x,s.y,s.r);
+    g.addColorStop(0,'rgba(48,130,92,.26)'); g.addColorStop(1,'rgba(48,130,92,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,TAU); ctx.fill();
+    ctx.strokeStyle='rgba(86,210,150,.30)'; ctx.lineWidth=1.5/cam.zoom;
+    ctx.setLineDash([7/cam.zoom,7/cam.zoom]);
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,TAU); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // pheromone haze (culled)
   if(showPhero){
     const cs=world.pcs, ph=world.phero;
-    for(let r=0;r<world.prows;r++) for(let c=0;c<world.pcols;c++){
-      const v=ph[r*world.pcols+c]; if(v>0.04){
-        ctx.fillStyle='rgba(122,162,255,'+Math.min(0.16,v*0.10)+')';
-        ctx.fillRect(c*cs,r*cs,cs,cs);
+    const c0=Math.max(0,(vx0/cs)|0), c1=Math.min(world.pcols-1,(vx1/cs)|0);
+    const r0=Math.max(0,(vy0/cs)|0), r1=Math.min(world.prows-1,(vy1/cs)|0);
+    for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++){
+      const v=ph[r*world.pcols+c]; if(v>0.06){
+        const a=Math.min(0.10,v*0.06);
+        ctx.fillStyle='rgba(122,162,255,'+a+')';
+        ctx.beginPath(); ctx.arc(c*cs+cs/2,r*cs+cs/2,cs*0.7,0,TAU); ctx.fill();
       }
     }
   }
-  // plant food
-  ctx.fillStyle='#1f3a2e';
-  for(const f of world.food){ ctx.beginPath(); ctx.arc(f.x,f.y,2.4,0,TAU); ctx.fill(); }
-  // organisms — appearance evolves with size & diet (bacteria → fish → shark)
+
+  // plant food (culled)
+  ctx.fillStyle='#2f6b4a';
+  for(const f of world.food){
+    if(f.x<vx0||f.x>vx1||f.y<vy0||f.y>vy1) continue;
+    ctx.beginPath(); ctx.arc(f.x,f.y,2.6,0,TAU); ctx.fill();
+  }
+  // organisms (culled)
   const t=performance.now()*0.001;
-  for(const o of world.orgs) drawCreature(o,t);
+  for(const o of world.orgs){
+    if(o.x<vx0||o.x>vx1||o.y<vy0||o.y>vy1) continue;
+    drawCreature(o,t);
+  }
+  ctx.restore();
+  drawMinimap();
+}
+
+// minimap — navigate the larger world; click/drag to fly the camera there
+const MM={x:12,y:12,w:172};
+function mmRect(){return {x:MM.x,y:MM.y,w:MM.w,h:MM.w*H/W};}
+function drawMinimap(){
+  const {x,y,w,h}=mmRect(), sx=w/W, sy=h/H;
+  ctx.save();
+  ctx.fillStyle='rgba(8,12,18,.86)'; ctx.fillRect(x,y,w,h);
+  ctx.fillStyle='rgba(60,160,110,.22)';
+  for(const s of world.shelters){ ctx.beginPath(); ctx.arc(x+s.x*sx,y+s.y*sy,s.r*sx,0,TAU); ctx.fill(); }
+  for(const o of world.orgs){
+    const carn=o.g.dietGene>0.5;
+    ctx.fillStyle=carn?'#ff5a6a':`hsl(${o.g.hue} 70% 60%)`;
+    const d=carn?2:1.2;
+    ctx.fillRect(x+o.x*sx-d/2, y+o.y*sy-d/2, d, d);
+  }
+  // viewport box
+  ctx.strokeStyle='rgba(92,242,196,.9)'; ctx.lineWidth=1;
+  ctx.strokeRect(x+(cam.x-(CW/2)/cam.zoom)*sx, y+(cam.y-(CH/2)/cam.zoom)*sy,
+                 (CW/cam.zoom)*sx, (CH/cam.zoom)*sy);
+  ctx.strokeStyle='#1b2738'; ctx.strokeRect(x,y,w,h);
+  ctx.restore();
 }
 
 // life-form classification used for both the skin and the inspector
@@ -461,7 +571,7 @@ function drawCreature(o,t){
 
   if(o===selected){
     ctx.beginPath(); ctx.arc(0,0,o.sense,0,TAU);
-    ctx.strokeStyle='rgba(92,242,196,.18)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.strokeStyle='rgba(92,242,196,.18)'; ctx.lineWidth=1.5/cam.zoom; ctx.stroke();
   }
 
   // soft glow / depth halo behind every organism
@@ -573,9 +683,14 @@ function drawCreature(o,t){
     ctx.fillStyle='#0a0f17'; ctx.beginPath(); ctx.arc(bL*0.43,-bH*0.3,er*0.55,0,TAU); ctx.fill();
   }
 
+  // predator marker — easy to spot at any zoom
+  if(highlightPred && c>0.5 && o!==selected){
+    ctx.strokeStyle='rgba(255,72,92,.95)'; ctx.lineWidth=2.2/cam.zoom;
+    ctx.beginPath(); ctx.arc(0,0,r*1.7,0,TAU); ctx.stroke();
+  }
   if(o===selected){
-    ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=1.5;
-    ctx.setLineDash([3,3]);
+    ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.lineWidth=2/cam.zoom;
+    ctx.setLineDash([4/cam.zoom,4/cam.zoom]);
     ctx.beginPath(); ctx.arc(0,0,r*2.2,0,TAU); ctx.stroke();
     ctx.setLineDash([]);
   }
@@ -639,26 +754,62 @@ function inspectHTML(o){
     <div style="margin-top:8px;color:#56708a">brain ${N_W} weights · ${N_IN}→${N_HID}→${N_OUT} · only mates within ${MATE_HUE}° hue</div>`;
 }
 
-// ── Interaction ─────────────────────────────────────────────────────────────────
-cv.addEventListener('click',e=>{
-  const r=cv.getBoundingClientRect();
-  const mx=e.clientX-r.left, my=e.clientY-r.top;
+// ── Interaction: zoom (wheel), pan (drag), select (click), minimap nav ──────────
+function pickAt(wx,wy){
   let best=null,bd=1e9;
   for(const o of world.orgs){
-    const d=Math.hypot(o.x-mx,o.y-my);
-    if(d<Math.max(14,o.r+6) && d<bd){bd=d;best=o;}
+    const d=Math.hypot(o.x-wx,o.y-wy);
+    if(d<Math.max(16,o.r+6) && d<bd){bd=d;best=o;}
   }
-  selected=best; $('inspect').innerHTML=inspectHTML(selected);
+  return best;
+}
+function inMinimap(mx,my){const {x,y,w,h}=mmRect();return mx>=x&&mx<=x+w&&my>=y&&my<=y+h;}
+function mmTo(mx,my){const {x,y,w,h}=mmRect();return {x:(mx-x)/w*W, y:(my-y)/h*H};}
+
+let drag=null;
+cv.addEventListener('mousedown',e=>{
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  if(inMinimap(mx,my)){ const p=mmTo(mx,my); cam.x=p.x; cam.y=p.y; clampCam(); drag={mm:true}; return; }
+  drag={mm:false, sx:mx, sy:my, cx:cam.x, cy:cam.y, moved:0};
 });
+window.addEventListener('mousemove',e=>{
+  if(!drag) return;
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  if(drag.mm){ const p=mmTo(mx,my); cam.x=p.x; cam.y=p.y; clampCam(); return; }
+  const dx=mx-drag.sx, dy=my-drag.sy;
+  drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));
+  cam.x=drag.cx-dx/cam.zoom; cam.y=drag.cy-dy/cam.zoom; clampCam();
+});
+window.addEventListener('mouseup',e=>{
+  if(drag && !drag.mm && drag.moved<5){
+    const r=cv.getBoundingClientRect();
+    const p=screenToWorld(e.clientX-r.left, e.clientY-r.top);
+    selected=pickAt(p.x,p.y); $('inspect').innerHTML=inspectHTML(selected);
+  }
+  drag=null;
+});
+cv.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  const before=screenToWorld(mx,my);
+  cam.zoom=clamp(cam.zoom*(e.deltaY<0?1.12:0.893), cam.min, cam.max);
+  const after=screenToWorld(mx,my);
+  cam.x+=before.x-after.x; cam.y+=before.y-after.y; clampCam();   // zoom toward cursor
+},{passive:false});
 $('k-food').addEventListener('input',e=>world.foodRate=e.target.value/100);
 $('k-mut').addEventListener('input',e=>world.mutationRate=e.target.value/100);
 let simSpeed=3;
 $('k-spd').addEventListener('input',e=>{simSpeed=+e.target.value;$('spd-val').textContent='×'+simSpeed;});
 $('k-phero').addEventListener('input',e=>showPhero=e.target.checked);
+$('k-pred').addEventListener('input',e=>highlightPred=e.target.checked);
+$('b-zin').addEventListener('click',()=>{cam.zoom=clamp(cam.zoom*1.35,cam.min,cam.max);});
+$('b-zout').addEventListener('click',()=>{cam.zoom=clamp(cam.zoom/1.35,cam.min,cam.max);clampCam();});
+$('b-fit').addEventListener('click',()=>{cam.zoom=cam.min;cam.x=W/2;cam.y=H/2;});
+$('b-seedp').addEventListener('click',()=>world.seedPredators());
 let paused=false;
 $('b-pause').addEventListener('click',e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause';});
 $('b-cull').addEventListener('click',()=>world.cataclysm());
-$('b-reset').addEventListener('click',()=>{world=new World();selected=null;$('inspect').innerHTML=inspectHTML(null);});
+$('b-reset').addEventListener('click',()=>{world=new World();selected=null;cam.zoom=cam.min;cam.x=W/2;cam.y=H/2;$('inspect').innerHTML=inspectHTML(null);});
 
 // ── Main loop ────────────────────────────────────────────────────────────────────
 function loop(){
