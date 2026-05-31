@@ -376,7 +376,7 @@ class World{
     this.orgs=alive.concat(nb);
     // 雪花
     for(let i=snowflakes.length-1;i>=0;i--){ const s=snowflakes[i]; s.step();
-      if(s.y>H-10||s.mass<0.01){ this.addDiss(s.x,clamp(s.y,H-10,H-5),s.mass*1.5); snowflakes.splice(i,1); } }
+      if(s.y>H-10||s.mass<0.01){ snowflakes.splice(i,1); } }   // snow is purely visual; mass already lives in detritus (conserved)
     // 浮游從剩餘營養萌芽（v3 標準）
     if(this.tick%5===0){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>60){
       const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
@@ -418,22 +418,26 @@ class World{
     }
     let grazers=0, mids=0, apex=0;
     for(const o of this.orgs) if(o.kind===FAUNA){ if(o.size<0.28)grazers++; else if(o.size<0.55)mids++; else apex++; }
+    // grazers assembled from nearby plankton biomass (+dissolved top-up) — works even
+    // when nutrient is locked in biomass, so the base of the pyramid never collapses
     if(grazers<80){
-      for(let n=0;n<Math.min(40,80-grazers);n++){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>25){
-        const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
-        const m=this.takeDiss(cx,cy,8); if(m>4) this.orgs.push(new Org(FAUNA,clamp(cx,4,W-4),clamp(cy,4,H-4),{size:rnd(0.18,0.05),diet:rnd(0.12,0),mass:m})); } }
+      const planks=this.orgs.filter(o=>o.kind===PLANK&&!o.dead&&o.mass>0.5); let made=0,idx=0;
+      while(made<Math.min(30,80-grazers)&&idx<planks.length){ const seed=planks[idx]; idx+=13; if(!seed||seed.dead)continue;
+        let m=0; for(const p of this.grid.near(seed.x,seed.y)){ if(p.kind===PLANK&&!p.dead&&p.mass>0){m+=p.mass;p.mass=0;p.dead=true;if(m>=26)break;} }
+        m+=this.takeDiss(seed.x,seed.y,Math.max(0,26-m));
+        if(m>12){ this.orgs.push(new Org(FAUNA,seed.x,seed.y,{size:rnd(0.18,0.05),diet:rnd(0.12,0),mass:m})); made++; } }
     }
+    // mid fish re-derived from well-fed grazers (gene shift up, mass conserved)
     if(mids<22){
-      for(let n=0;n<Math.min(8,22-mids);n++){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>20){
-        const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
-        const m=this.takeDiss(cx,cy,12); if(m>6) this.orgs.push(new Org(FAUNA,clamp(cx,4,W-4),clamp(cy,4,H-4),
-          {size:rnd(0.5,0.35),diet:rnd(0.6,0.4),mass:m})); } }
+      const gs=this.orgs.filter(o=>o.kind===FAUNA&&o.size<0.28&&o.mass>o.reproMass*0.55).sort((a,b)=>b.mass-a.mass);
+      for(let n=0;n<Math.min(10,gs.length);n++){ const o=gs[n];
+        o.size=rnd(0.5,0.32); o.diet=rnd(0.65,0.4); o.reproMass=reproMassOf(o.size); o.hue=rnd(60,20); o.maxAge=1200+o.size*5000+rnd(600); }
     }
+    // apex re-derived from well-fed mid animals (gene shift up, mass conserved)
     if(apex<3){
-      for(let n=0;n<Math.min(3,3-apex);n++){ const i=(Math.random()*this.diss.length)|0; if(this.diss[i]>20){
-        const cx=(i%this.ncols)*this.ncs+rnd(this.ncs), cy=((i/this.ncols)|0)*this.ncs+rnd(this.ncs);
-        const m=this.takeDiss(cx,cy,20); if(m>10) this.orgs.push(new Org(FAUNA,clamp(cx,4,W-4),clamp(cy,4,H-4),
-          {size:rnd(0.85,0.65),diet:rnd(0.95,0.75),mass:m})); } }
+      const ms=this.orgs.filter(o=>o.kind===FAUNA&&o.size>=0.28&&o.size<0.6&&o.mass>o.reproMass*0.55).sort((a,b)=>b.mass-a.mass);
+      for(let n=0;n<Math.min(4,ms.length);n++){ const o=ms[n];
+        o.size=rnd(0.8,0.62); o.diet=rnd(0.92,0.75); o.reproMass=reproMassOf(o.size); o.hue=rnd(26,0); o.maxAge=1200+o.size*5000+rnd(600); }
     }
   }
   diffuse(){ const d=this.diss,c=this.ncols,r=this.nrows,out=new Float32Array(d.length),D=0.12;
@@ -445,8 +449,8 @@ class World{
     // 葉子再生：mass 增加時優先修復葉子
     if(o.leaves<o.mass*0.7) o.leaves+=Math.min(0.1,o.mass*0.7-o.leaves);
     if(o.mass<o.leaves) o.leaves=o.mass;
-    // 根系老化：隨年齡衰退
-    o.age++; if(o.age>o.maxAge){o.rootHealth-=0.003;}
+    // 根系老化：隨年齡衰退（age 已在 step() 主迴圈遞增，這裡不再重複）
+    if(o.age>o.maxAge){o.rootHealth-=0.003;}
     if(o.rootHealth<=0){o.dead=true;return;}
     if(o.mass>120){this.addDetritus(o.x,o.y,o.mass-120);o.mass=120;}
     if(o.mass<=1.8){o.dead=true;return;}
@@ -546,10 +550,9 @@ class World{
           if(edT.kind===WEED){
             if(edT.leaves>0.3){
               take=Math.min(edT.leaves,myClass<1?8:5);
-              edT.leaves-=take; edT.mass-=take;
+              edT.leaves-=take;            // mass is subtracted once in the common block below
             } else if(myClass<1&&edT.mass>1){
               take=Math.min(edT.mass-0.5,5);
-              edT.mass-=take;
             } else take=0;
           }
           else take=Math.min(Math.max(0.3,edT.mass-0.3),6);
@@ -561,9 +564,9 @@ class World{
       if(dx*dx+dy*dy<rr*rr){
         let safe=false;
         if(prey.size<0.3){
-          let cnt=0, theWeed=null;
-          for(const wd of weedGrid.near(prey.x,prey.y)){ const ex=wd.x-prey.x,ey=wd.y-prey.y; if(ex*ex+ey*ey<80*80){cnt++;if(!theWeed)theWeed=wd;} }
-          if(cnt>=8){ safe=true; if(theWeed&&Math.random()<0.02){theWeed.mass-=3;if(theWeed.mass<=2)theWeed.dead=true;} }
+          let cnt=0;
+          for(const wd of weedGrid.near(prey.x,prey.y)){ const ex=wd.x-prey.x,ey=wd.y-prey.y; if(ex*ex+ey*ey<70*70)cnt++; }
+          if(cnt>=2) safe=true;   // sheltered among seaweed (a small grazer nursery)
         }
         if(!safe){ const M=prey.mass, g=M*(0.15+0.22*o.diet);
           o.mass+=g; o.fitness+=g*0.5; o.feedCount++;
@@ -575,7 +578,7 @@ class World{
     if(o.mass>o.reproMass && this.orgs.length+nb.length<3400){ o.mass*=0.5;
       const childFitness=o.fitness*0.6+(o.feedCount>0?o.feedCount*0.3:0); // 繼承父母 fitness
       nb.push(new Org(FAUNA,o.x+rnd(14,-14),o.y+rnd(14,-14),{ mass:o.mass, brain:mutBrain(o.brain,this.mutRate),
-        size:o.size, diet:o.diet, speed:mg(o.speed,this.mutRate), sense:mg(o.sense,this.mutRate),
+        size:mg(o.size,this.mutRate,0.06), diet:mg(o.diet,this.mutRate,0.09), speed:mg(o.speed,this.mutRate), sense:mg(o.sense,this.mutRate),
         school:mg(o.school,this.mutRate*0.7,0.15),
         fitness:childFitness,
         hue:(o.hue+(Math.random()<this.mutRate?rnd(30,-30):0)+360)%360, gen:o.gen+1, line:o.line }));
