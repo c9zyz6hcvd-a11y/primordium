@@ -332,12 +332,6 @@ class World{
     for(let i=0;i<45;i++)  this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.5,0.3),diet:rnd(0.6,0.35)}));
     for(let i=0;i<7;i++)   this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.85,0.62),diet:rnd(0.95,0.7)}));
     this.history=[]; this._histTick=0;
-    // 珊瑚礁：初始極稀少，緩慢生長
-    this.reefCapacity=new Float32Array(this.ncols*this.nrows);
-    for(let y=0;y<this.nrows;y++)for(let x=0;x<this.ncols;x++){
-      const dep=depthAt(this.terrain,x*this.ncs,y*this.ncs);
-      if(dep>0.3&&dep<0.55&&Math.random()<0.08) this.reefCapacity[y*this.ncols+x]=1+rnd(1);
-    }
   }
   nIdx(x,y){const c=clamp((x/this.ncs)|0,0,this.ncols-1),r=clamp((y/this.ncs)|0,0,this.nrows-1);return r*this.ncols+c;}
   sun(){const t=(this.tick%this.dayLen)/this.dayLen;return clamp(0.12+0.95*(Math.max(0,Math.sin(t*TAU-Math.PI/2))*0.5+0.5),0,1);}
@@ -379,12 +373,6 @@ class World{
       if(o.dead){ if(o.y<H*0.6) this.addSnow(o.x,o.y,o.mass*0.3); this.addDetritus(o.x,o.y,o.mass); }
       else alive.push(o); }
     this.orgs=alive.concat(nb);
-    // 珊瑚礁緩慢生長（每 50 tick 一小部分擴張）
-    if(this.tick%50===0){ const i=(Math.random()*this.reefCapacity.length)|0;
-      if(this.reefCapacity[i]>0&&this.reefCapacity[i]<10){ const x=i%this.ncols,y=(i/this.ncols)|0;
-        const dep=depthAt(this.terrain,x*this.ncs,y*this.ncs);
-        if(dep>0.3&&dep<0.55&&Math.random()<0.2) this.reefCapacity[i]+=0.5; }
-    }
     // 雪花
     for(let i=snowflakes.length-1;i>=0;i--){ const s=snowflakes[i]; s.step();
       if(s.y>H-10||s.mass<0.01){ this.addDiss(s.x,clamp(s.y,H-10,H-5),s.mass*1.5); snowflakes.splice(i,1); } }
@@ -565,13 +553,6 @@ class World{
           for(const wd of weedGrid.near(prey.x,prey.y)){ const ex=wd.x-prey.x,ey=wd.y-prey.y; if(ex*ex+ey*ey<80*80){cnt++;if(!theWeed)theWeed=wd;} }
           if(cnt>=8){ safe=true; if(theWeed&&Math.random()<0.02){theWeed.mass-=3;if(theWeed.mass<=2)theWeed.dead=true;} }
         }
-        if(!safe && prey.size>=0.2 && prey.size<0.55){
-          const reefIdx=this.nIdx(prey.x,prey.y);
-          if((this.reefCapacity[reefIdx]||0)>0){
-            let cnt=0; for(const a of animGrid.near(prey.x,prey.y)){if(a.kind===FAUNA&&a.size>=0.2&&a.size<0.55&&!a.dead)cnt++;}
-            if(cnt<=this.reefCapacity[reefIdx]) safe=true;
-          }
-        }
         if(!safe){ const M=prey.mass, g=M*(0.15+0.22*o.diet);
           o.mass+=g; o.fitness+=g*0.5; o.feedCount++;
           this.addDetritus(prey.x,prey.y,(M-g)*0.6); this.addDiss(prey.x,prey.y,(M-g)*0.4);
@@ -700,12 +681,6 @@ function draw(){
     ctx.fillStyle='rgba(200,215,230,1)'; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,TAU); ctx.fill();
   }
   ctx.globalAlpha=1;
-  // === 珊瑚礁視覺化（顯眼橘色） ===
-  const cs2=world.ncs;
-  for(let r=Math.max(0,(vy0/cs2)|0);r<=Math.min(world.nrows-1,(vy1/cs2)|0);r++)for(let c=Math.max(0,(vx0/cs2)|0);c<=Math.min(world.ncols-1,(vx1/cs2)|0);c++){
-    const cap=world.reefCapacity[r*world.ncols+c];
-    if(cap>0){ ctx.fillStyle=`rgba(230,120,70,${0.2+cap*0.06})`; ctx.fillRect(c*cs2,r*cs2,cs2,cs2); }
-  }
   // === 營養水色（與 v3 一致） ===
   const cs=world.ncs, c0=Math.max(0,(vx0/cs)|0),c1=Math.min(world.ncols-1,(vx1/cs)|0),r0=Math.max(0,(vy0/cs)|0),r1=Math.min(world.nrows-1,(vy1/cs)|0);
   for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++){ const v=world.diss[r*world.ncols+c]; if(v>30){ ctx.fillStyle=`rgba(58,123,213,${Math.min(0.10,(v-30)*0.002)})`; ctx.fillRect(c*cs,r*cs,cs,cs); } }
