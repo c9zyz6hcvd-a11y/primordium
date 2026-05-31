@@ -679,6 +679,12 @@ function draw(){
     ctx.fillStyle='rgba(200,215,230,1)'; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,TAU); ctx.fill();
   }
   ctx.globalAlpha=1;
+  // === 珊瑚礁視覺化 ===
+  const cs2=world.ncs;
+  for(let r=Math.max(0,(vy0/cs2)|0);r<=Math.min(world.nrows-1,(vy1/cs2)|0);r++)for(let c=Math.max(0,(vx0/cs2)|0);c<=Math.min(world.ncols-1,(vx1/cs2)|0);c++){
+    const cap=world.reefCapacity[r*world.ncols+c];
+    if(cap>0){ ctx.fillStyle=`rgba(230,140,100,${0.08+cap*0.02})`; ctx.fillRect(c*cs2,r*cs2,cs2,cs2); }
+  }
   // === 營養水色（與 v3 一致） ===
   const cs=world.ncs, c0=Math.max(0,(vx0/cs)|0),c1=Math.min(world.ncols-1,(vx1/cs)|0),r0=Math.max(0,(vy0/cs)|0),r1=Math.min(world.nrows-1,(vy1/cs)|0);
   for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++){ const v=world.diss[r*world.ncols+c]; if(v>30){ ctx.fillStyle=`rgba(58,123,213,${Math.min(0.10,(v-30)*0.002)})`; ctx.fillRect(c*cs,r*cs,cs,cs); } }
