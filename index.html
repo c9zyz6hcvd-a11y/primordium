@@ -268,8 +268,8 @@ class Org{
       if(d>this.sense) continue;
       if(o.r > this.r*1.15){ if(d<td){td=d;tdx=dx;tdy=dy;} }
       else if(o.r < this.r*0.87){ if(d<pd){pd=d;pdx=dx;pdy=dy;prey=o;} }
-      // ---- predation: contact with a smaller organism (prey safe inside shelter) ----
-      if(o.r < this.r*0.82 && d < this.r && !world.inShelter(o.x,o.y)){
+      // ---- predation: shelters protect only the small/young; adults are fair game ----
+      if(o.r < this.r*0.82 && d < this.r && (o.r>6.5 || !world.inShelter(o.x,o.y))){
         const gain=(o.energy*0.7 + o.r*2.6 + 26)*(0.3 + 0.9*this.g.dietGene);
         this.energy=Math.min(MAX_E,this.energy+gain);
         o.dead=true; world.kills++;
@@ -320,7 +320,7 @@ class Org{
     if(food){
       const dx=food.x-this.x, dy=food.y-this.y;
       if(dx*dx+dy*dy < (this.r+3)*(this.r+3)){
-        this.energy=Math.min(MAX_E,this.energy+food.e*(1-0.78*this.g.dietGene));
+        this.energy=Math.min(MAX_E,this.energy+food.e*(1-0.6*this.g.dietGene)); // carnivores can scrape by on plants
         world.eat(food);
       }
     }
@@ -404,13 +404,15 @@ class World{
     const keep=Math.max(6,(this.orgs.length*0.3)|0);
     this.deaths+=this.orgs.length-keep; this.orgs.length=keep;
   }
-  seedPredators(n=14){        // inject a pod of large reddish carnivores
+  seedPredators(n=14, cluster=true){   // inject a breeding pod of large reddish carnivores
+    const cx=rnd(W*0.8,W*0.2), cy=rnd(H*0.8,H*0.2);
     for(let i=0;i<n;i++){
       const g=mutate(this.ancestor,0.12);
-      g.dietGene=rnd(1,0.75); g.sizeGene=rnd(1,0.72); g.speedGene=rnd(1,0.5);
-      g.hue=rnd(28,0);        // red family
-      const o=new Org(g,rnd(W),rnd(H),0,NEXT_LINE++);
-      o.age=320; o.energy=210; // born adult so they can hunt right away
+      g.dietGene=rnd(1,0.8); g.sizeGene=rnd(1,0.75); g.speedGene=rnd(1,0.5);
+      g.hue=rnd(18,0);       // tight red family → can mate with each other
+      const x=cluster?cx+rnd(150,-150):rnd(W), y=cluster?cy+rnd(150,-150):rnd(H);
+      const o=new Org(g, clamp(x,12,W-12), clamp(y,12,H-12),0,NEXT_LINE++);
+      o.age=320; o.energy=220; // born adult & fertile so they can hunt and breed
       this.orgs.push(o);
     }
   }
@@ -465,10 +467,10 @@ class World{
         }
       }
     }
-    // keep predators from going fully extinct (toggleable)
-    if(this.sustainPred && this.tick%150===0){
+    // keep predators from going fully extinct (toggleable) — seed a breeding pod
+    if(this.sustainPred && this.tick%220===0){
       let carn=0; for(const o of this.orgs) if(o.g.dietGene>0.5) carn++;
-      if(carn<5) this.seedPredators(5);
+      if(carn<8) this.seedPredators(8,true);
     }
     if(this.tick%6===0) this.sample();
   }
