@@ -326,6 +326,12 @@ class World{
     for(let i=0;i<45;i++)  this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.5,0.3),diet:rnd(0.6,0.35)}));
     for(let i=0;i<7;i++)   this.orgs.push(new Org(FAUNA,rnd(W),rnd(H),{size:rnd(0.85,0.62),diet:rnd(0.95,0.7)}));
     this.history=[]; this._histTick=0;
+    // 珊瑚礁容量（地形細胞為單位）
+    this.reefCapacity=new Float32Array(this.ncols*this.nrows);
+    for(let y=0;y<this.nrows;y++)for(let x=0;x<this.ncols;x++){
+      const dep=depthAt(this.terrain,x*this.ncs,y*this.ncs);
+      if(dep>0.3&&dep<0.55) this.reefCapacity[y*this.ncols+x]=3+rnd(3);
+    }
   }
   nIdx(x,y){const c=clamp((x/this.ncs)|0,0,this.ncols-1),r=clamp((y/this.ncs)|0,0,this.nrows-1);return r*this.ncols+c;}
   sun(){const t=(this.tick%this.dayLen)/this.dayLen;return clamp(0.12+0.95*(Math.max(0,Math.sin(t*TAU-Math.PI/2))*0.5+0.5),0,1);}
@@ -526,14 +532,26 @@ class World{
       if(dx*dx+dy*dy<rr*rr){
         if(edT.m!==undefined){ const t=Math.min(edT.m,3); edT.m-=t; const gain=t*0.6*(1-o.diet*0.7); o.mass+=gain; this.addDiss(o.x,o.y,t*(1-0.6*(1-o.diet*0.7))); o.fitness+=gain*0.2; o.feedCount++; }
         else {
-          let take=edT.kind===WEED?Math.min(Math.max(0,edT.mass-7),6):Math.max(0.2,Math.min(edT.mass-0.5,5));
-          if(take>0.2){ edT.mass-=take; if(edT.kind!==WEED&&edT.mass<=0.2)edT.dead=true;
+          let take=edT.kind===WEED?Math.min(Math.max(0,edT.mass-7),6):Math.min(Math.max(0.3,edT.mass-0.3),6);
+          if(take>0.2){ edT.mass-=take; if(edT.kind!==WEED&&edT.mass<=0.05)edT.dead=true;
             const g=take*0.6*(1-o.diet*0.7); o.mass+=g; o.fitness+=g*0.2; o.feedCount++;
             this.addDetritus(o.x,o.y,(take-g)*0.6); this.addDiss(o.x,o.y,(take-g)*0.4); } } } }
     // 掠食
     if(canMeat && prey && !prey.dead && !full){ const dx=prey.x-o.x,dy=prey.y-o.y, rr=myR+prey.r;
       if(dx*dx+dy*dy<rr*rr){
-        let safe=false; if(prey.size<0.3){ for(const wd of weedGrid.near(prey.x,prey.y)){ const ex=wd.x-prey.x,ey=wd.y-prey.y; if(ex*ex+ey*ey<66*66){safe=true;break;} } }
+        let safe=false;
+        if(prey.size<0.3){
+          let weedCount=0, theWeed=null;
+          for(const wd of weedGrid.near(prey.x,prey.y)){ weedCount++; if(!theWeed) theWeed=wd; }
+          if(weedCount>=15){ safe=true; if(Math.random()<0.003&&theWeed){theWeed.mass-=1.5;if(theWeed.mass<=2)theWeed.dead=true;} }
+        }
+        if(!safe && prey.size>=0.2 && prey.size<0.55){
+          const reefIdx=this.nIdx(prey.x,prey.y);
+          if((this.reefCapacity[reefIdx]||0)>0){
+            let cnt=0; for(const a of animGrid.near(prey.x,prey.y)){if(a.kind===FAUNA&&a.size>=0.2&&a.size<0.55&&!a.dead)cnt++;}
+            if(cnt<=this.reefCapacity[reefIdx]) safe=true;
+          }
+        }
         if(!safe){ const M=prey.mass, g=M*(0.15+0.22*o.diet);
           o.mass+=g; o.fitness+=g*0.5; o.feedCount++;
           this.addDetritus(prey.x,prey.y,(M-g)*0.6); this.addDiss(prey.x,prey.y,(M-g)*0.4);
