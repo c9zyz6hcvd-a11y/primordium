@@ -776,7 +776,7 @@ function updateHUD(){ const T=world.totals();
   $('s-total').textContent=Math.round(T.total).toLocaleString();
   const rows=[[T.plank,'#7ad0ff'],[T.small,'#ffd27a'],[T.mid,'#ff9a5a'],[T.big,'#ff5a6a']];
   const mx=Math.max(1,...rows.map(r=>r[0]));
-  $('pyr').innerHTML=rows.map(([v,c])=>`<div style="width:${Math.max(8,v/mx*100)}%;background:${c}">${v}</div>`).reverse().join('');
+  $('pyr').innerHTML=rows.map(([v,c])=>`<div style="width:${Math.max(5,Math.pow(v/mx,0.5)*100)}%;background:${c}">${v}</div>`).reverse().join('');
   const frac=(world.tick%world.dayLen)/world.dayLen, hh=((frac*24)|0), mm=(((frac*24)%1)*60|0), sun=world.sun();
   $('clock').textContent=`${sun>0.6?'☀️':sun>0.25?(frac<0.5?'🌅':'🌇'):'🌙'} ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   if(selected && !selected.dead){ const o=selected;
