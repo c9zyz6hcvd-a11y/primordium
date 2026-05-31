@@ -486,10 +486,13 @@ class World{
       for(const d of detGrid.near(o.x,o.y)){ const dx=d.x-o.x,dy=d.y-o.y,ds=Math.hypot(dx,dy); if(ds<ed){ed=ds;edx=dx;edy=dy;edT=d;} }
     }
     let prey=null,pd=S,pdx=0,pdy=0, threat=S,tx=0,ty=0;
-    if(canMeat||true){ for(const a of animGrid.near(o.x,o.y)){ if(a===o||a.dead)continue;
-      const dx=a.x-o.x,dy=a.y-o.y,d=Math.hypot(dx,dy); if(d>S)continue;
-      if(canMeat && a.r<myR*0.7){ if(d<pd){pd=d;pdx=dx;pdy=dy;prey=a;} }
-      if(a.r>myR*1.4){ if(d<threat){threat=d;tx=dx;ty=dy;} } } }
+    if(canMeat||true){
+      const myClass=o.size<0.28?0:o.size<0.55?1:2; // 0=蝦 1=魚 2=鯊魚
+      for(const a of animGrid.near(o.x,o.y)){ if(a===o||a.dead)continue;
+        const dx=a.x-o.x,dy=a.y-o.y,d=Math.hypot(dx,dy); if(d>S)continue;
+        if(myClass===2 && a.size>=0.28&&a.size<0.55 && a.r<myR*0.7){ if(d<pd){pd=d;pdx=dx;pdy=dy;prey=a;} } // 鯊魚吃魚
+        if(myClass===1 && a.size<0.28 && a.r<myR*0.7){ if(d<pd){pd=d;pdx=dx;pdy=dy;prey=a;} } // 魚吃蝦
+        if(a.r>myR*1.4){ if(d<threat){threat=d;tx=dx;ty=dy;} } } }
     let fx=edx,fy=edy,fdist=ed;
     if(prey && (pd<ed || o.diet>0.6)){ fx=pdx;fy=pdy;fdist=pd; }
     const ca=Math.cos(o.a),sa=Math.sin(o.a), I=o._i;
