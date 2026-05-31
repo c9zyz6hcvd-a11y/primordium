@@ -479,10 +479,15 @@ class World{
         }
       }
     }
-    // 覓食
+    // 覓食（依階級決定能吃什麼）
+    let myClass=o.size<0.28?0:o.size<0.55?1:2; // 0=蝦 1=魚 2=鯊魚
     let ed=S,edx=0,edy=0,edT=null;
-    if(canPlants){
-      for(const f of foodGrid.near(o.x,o.y)){ const dx=f.x-o.x,dy=f.y-o.y,d=Math.hypot(dx,dy); if(d<ed){ed=d;edx=dx;edy=dy;edT=f;} }
+    const canEatPlank=myClass<2, canEatWeed=myClass<2;
+    if(canEatPlank||canEatWeed){
+      for(const f of foodGrid.near(o.x,o.y)){ if(f.dead)continue;
+        if(f.kind===PLANK&&!canEatPlank)continue;
+        if(f.kind===WEED&&!canEatWeed)continue;
+        const dx=f.x-o.x,dy=f.y-o.y,d=Math.hypot(dx,dy); if(d<ed){ed=d;edx=dx;edy=dy;edT=f;} }
       for(const d of detGrid.near(o.x,o.y)){ const dx=d.x-o.x,dy=d.y-o.y,ds=Math.hypot(dx,dy); if(ds<ed){ed=ds;edx=dx;edy=dy;edT=d;} }
     }
     let prey=null,pd=S,pdx=0,pdy=0, threat=S,tx=0,ty=0;
@@ -531,11 +536,13 @@ class World{
     const met=(0.025+o.mass*0.0022+runCost)*fitPenalty;
     o.mass-=met; this.addDiss(o.x,o.y,met);
     // 吃植物/碎屑 + fitness
-    if(canPlants && edT && !edT.dead){ const dx=edT.x-o.x,dy=edT.y-o.y, rr=(myR+(edT.r||3)+3);
+    if(edT && !edT.dead){ const dx=edT.x-o.x,dy=edT.y-o.y, rr=(myR+(edT.r||3)+3);
       if(dx*dx+dy*dy<rr*rr){
         if(edT.m!==undefined){ const t=Math.min(edT.m,3); edT.m-=t; const gain=t*0.6*(1-o.diet*0.7); o.mass+=gain; this.addDiss(o.x,o.y,t*(1-0.6*(1-o.diet*0.7))); o.fitness+=gain*0.2; o.feedCount++; }
         else {
-          let take=edT.kind===WEED?Math.min(Math.max(0,edT.mass-7),6):Math.min(Math.max(0.3,edT.mass-0.3),6);
+          let take;
+          if(edT.kind===WEED) take=myClass<1?Math.min(Math.max(0,edT.mass-2),8):Math.min(Math.max(0,edT.mass-7),5);
+          else take=Math.min(Math.max(0.3,edT.mass-0.3),6);
           if(take>0.2){ edT.mass-=take; if(edT.kind!==WEED&&edT.mass<=0.05)edT.dead=true;
             const g=take*0.6*(1-o.diet*0.7); o.mass+=g; o.fitness+=g*0.2; o.feedCount++;
             this.addDetritus(o.x,o.y,(take-g)*0.6); this.addDiss(o.x,o.y,(take-g)*0.4); } } } }
