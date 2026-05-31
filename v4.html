@@ -104,6 +104,7 @@
       <div class="stat"><span>🦈 大型（頂級）</span><b id="s-big">0</b></div>
       <div class="stat"><span>📅 世代數</span><b id="s-gen">0</b></div>
       <div class="stat"><span>🐟 平均魚群大小</span><b id="s-school">—</b></div>
+      <div class="stat"><span>🧠 平均適應度</span><b id="s-fitness">—</b></div>
     </div>
 
     <div class="card">
@@ -182,8 +183,12 @@ function showToast(msg, dur=2200){
   show();
 }
 
-// ── 神經網路 ──
-const N_IN=8, N_HID=8, N_OUT=3;
+// ── 神經網路（含記憶細胞 + RNN 回饋） ──
+const N_IN=10, N_HID=10, N_OUT=5;
+// N_IN:  0=食物距離,1=食物方向(前),2=食物方向(側),3=威脅距離,4=威脅方向(側),5=飽足感,6=同伴量,7=bias,
+//        8=記憶細胞1(前次隱藏層回饋),9=記憶細胞2
+// N_OUT: 0=轉向,1=推力,2=?
+//        3=記憶寫入1,4=記憶寫入2 (寫入 sigmoid 壓到 0~1 供下回合使用)
 const N_W=N_IN*N_HID+N_HID+N_HID*N_OUT+N_OUT;
 function randBrain(){const w=new Float32Array(N_W);for(let i=0;i<N_W;i++)w[i]=rnd(1,-1);return w;}
 function think(w,inp,hid,out){let k=0;
@@ -281,6 +286,10 @@ class Org{
       this.maxAge=opt.maxAge ?? (1200+this.size*5000+rnd(600));
       this.brain=opt.brain||randBrain();
       this.steerBias=0; this._h=new Float32Array(N_HID); this._o=new Float32Array(N_OUT); this._i=new Float32Array(N_IN);
+      // v4.5: 適應度追蹤 + 記憶細胞
+      this.fitness=opt.fitness??1;     // 累積適應分數
+      this.feedCount=0;                // 成功進食次數
+      this._memory=new Float32Array([0,0]); // 記憶細胞（跨回合 RNN）
     }
   }
   get r(){ if(this.kind===WEED) return 3+this.mass*0.16; if(this.kind===PLANK) return 1.6+this.mass*0.25;
@@ -330,7 +339,7 @@ class World{
     // 歷史記錄
     if(this.tick-this._histTick>=90){
       this._histTick=this.tick; const t=this.totals();
-      this.history.push([this.tick, t.weed, t.plank, t.small, t.mid, t.big]);
+      this.history.push([this.tick, t.weed, t.plank, t.small, t.mid, t.big, t.avgFitness]);
       if(this.history.length>600) this.history=this.history.slice(-600);
     }
     this.grid.clear(); const foodGrid=new Grid(70), weedGrid=new Grid(70), animGrid=new Grid(90);
@@ -470,7 +479,12 @@ class World{
     I[5]= clamp(o.mass/o.reproMass,0,1);
     I[6]= schoolCount>1?clamp(schoolCount/8,0,1):0;
     I[7]=1;
+    // 記憶細胞回饋（RNN — 讓動物記住之前發生過的事）
+    I[8]=o._memory[0]; I[9]=o._memory[1];
     think(o.brain,I,o._h,o._o);
+    // 寫回記憶（sigmoid 壓到 0~1）
+    o._memory[0]=clamp(o._memory[0]*0.9+(o._o[3]*0.5+0.5)*0.1,0,1);
+    o._memory[1]=clamp(o._memory[1]*0.9+(o._o[4]*0.5+0.5)*0.1,0,1);
     const raw=o._o[0]; o.steerBias=o.steerBias*0.96+raw*0.04; o.a+=(raw-o.steerBias)*0.3;
     // 群遊力
     if(schoolCount>1 && o.school>0.2){
@@ -488,40 +502,49 @@ class World{
     const depthFactor=1-dep*0.6;
     o.x+=o.vx+cur.x*this.curStr*0.3*depthFactor; o.y+=o.vy+cur.y*this.curStr*0.3*depthFactor;
     this.wrap(o);
-    // 代謝
-    const sp=Math.hypot(o.vx,o.vy), met=0.025+o.mass*0.0022+sp*0.03;
+    // 代謝（低 fitness 動物代謝更高 → 淘汰弱者）
+    const sp=Math.hypot(o.vx,o.vy);
+    const fitPenalty=1+0.15*(1-clamp(o.fitness/10,0,1));
+    const met=(0.025+o.mass*0.0022+sp*0.03)*fitPenalty;
     o.mass-=met; this.addDiss(o.x,o.y,met);
-    // 吃植物/碎屑
+    // 吃植物/碎屑 + fitness
     if(canPlants && edT && !edT.dead){ const dx=edT.x-o.x,dy=edT.y-o.y, rr=(myR+(edT.r||3)+3);
       if(dx*dx+dy*dy<rr*rr){
-        if(edT.m!==undefined){ const t=Math.min(edT.m,3); edT.m-=t; o.mass+=t*0.6*(1-o.diet*0.7); this.addDiss(o.x,o.y,t*(1-0.6*(1-o.diet*0.7))); }
+        if(edT.m!==undefined){ const t=Math.min(edT.m,3); edT.m-=t; const gain=t*0.6*(1-o.diet*0.7); o.mass+=gain; this.addDiss(o.x,o.y,t*(1-0.6*(1-o.diet*0.7))); o.fitness+=gain*0.2; o.feedCount++; }
         else { let take=edT.kind===WEED?Math.min(Math.max(0,edT.mass-7),5):Math.min(edT.mass*0.5,2.5);
           if(take>0.2){ edT.mass-=take; if(edT.kind!==WEED&&edT.mass<=1.0)edT.dead=true;
-            const g=take*0.6*(1-o.diet*0.7); o.mass+=g; this.addDetritus(o.x,o.y,(take-g)*0.6); this.addDiss(o.x,o.y,(take-g)*0.4); } } } }
+            const g=take*0.6*(1-o.diet*0.7); o.mass+=g; o.fitness+=g*0.2; o.feedCount++;
+            this.addDetritus(o.x,o.y,(take-g)*0.6); this.addDiss(o.x,o.y,(take-g)*0.4); } } } }
     // 掠食
     if(canMeat && prey && !prey.dead && !full){ const dx=prey.x-o.x,dy=prey.y-o.y, rr=myR+prey.r;
       if(dx*dx+dy*dy<rr*rr){
         let safe=false; if(prey.size<0.3){ for(const wd of weedGrid.near(prey.x,prey.y)){ const ex=wd.x-prey.x,ey=wd.y-prey.y; if(ex*ex+ey*ey<66*66){safe=true;break;} } }
         if(!safe){ const M=prey.mass, g=M*(0.15+0.22*o.diet);
-          o.mass+=g; this.addDetritus(prey.x,prey.y,(M-g)*0.6); this.addDiss(prey.x,prey.y,(M-g)*0.4);
+          o.mass+=g; o.fitness+=g*0.5; o.feedCount++;
+          this.addDetritus(prey.x,prey.y,(M-g)*0.6); this.addDiss(prey.x,prey.y,(M-g)*0.4);
           prey.mass=0; prey.dead=true; } } }
     if(o.age%150===0 && o.mass>o.reproMass*0.3){ const e=o.mass*0.04; o.mass-=e; this.addDetritus(o.x,o.y,e); }
     const cap=o.reproMass*1.5; if(o.mass>cap){this.addDetritus(o.x,o.y,o.mass-cap);o.mass=cap;}
     if(o.mass<=o.reproMass*0.12+1){o.dead=true;return;}
     if(o.mass>o.reproMass && this.orgs.length+nb.length<3400){ o.mass*=0.5;
+      const childFitness=o.fitness*0.6+(o.feedCount>0?o.feedCount*0.3:0); // 繼承父母 fitness
       nb.push(new Org(FAUNA,o.x+rnd(14,-14),o.y+rnd(14,-14),{ mass:o.mass, brain:mutBrain(o.brain,this.mutRate),
         size:mg(o.size,this.mutRate,0.07), diet:mg(o.diet,this.mutRate,0.1), speed:mg(o.speed,this.mutRate), sense:mg(o.sense,this.mutRate),
         school:mg(o.school,this.mutRate*0.7,0.15),
+        fitness:childFitness,
         hue:(o.hue+(Math.random()<this.mutRate?rnd(14,-14):0)+360)%360, gen:o.gen+1, line:o.line }));
       this.gen=Math.max(this.gen,o.gen+1); }
   }
-  totals(){ let bio=0,det=0,diss=0,weed=0,plank=0,small=0,mid=0,big=0,sc=0,scn=0;
+  totals(){ let bio=0,det=0,diss=0,weed=0,plank=0,small=0,mid=0,big=0,sc=0,scn=0,
+      fitSum=0,fitN=0;
     for(const o of this.orgs){ bio+=o.mass;
       if(o.kind===WEED)weed++; else if(o.kind===PLANK)plank++;
       else { if(o.size<0.28)small++; else if(o.size<0.55)mid++; else big++;
-        if(o.school>0.3&&o.size>0.2&&o.size<0.6){sc+=o.school;scn++;} } }
+        if(o.school>0.3&&o.size>0.2&&o.size<0.6){sc+=o.school;scn++;}
+        fitSum+=o.fitness; fitN++; } }
     for(const d of this.detritus) det+=d.m; for(let i=0;i<this.diss.length;i++) diss+=this.diss[i];
-    return {bio,det,diss,weed,plank,small,mid,big,total:bio+det+diss,avgSchool:scn>0?sc/scn:0}; }
+    const avgFit=fitN>0?fitSum/fitN:0;
+    return {bio,det,diss,weed,plank,small,mid,big,total:bio+det+diss,avgSchool:scn>0?sc/scn:0,avgFitness:avgFit}; }
 
   // ── 存檔/讀檔 ──
   toSaveData(){
@@ -532,7 +555,8 @@ class World{
         if(o.kind===WEED){base.sw=o.sway;base.ph=o.phase;base.ln=o.len;}
         else if(o.kind===PLANK){base.dr=o.drift;base.dp=o.dphase;}
         else {base.sz=o.size;base.dt=o.diet;base.sp=o.speed;base.se=o.sense;base.sc=o.school;
-          base.rm=o.reproMass;base.ma=o.maxAge;base.br=Array.from(o.brain);}
+          base.rm=o.reproMass;base.ma=o.maxAge;base.br=Array.from(o.brain);
+          base.fi=o.fitness;base.fc=o.feedCount;base.m0=o._memory[0];base.m1=o._memory[1];}
         return base;
       }),
       detritus:this.detritus.map(d=>({x:d.x,y:d.y,m:d.m,vx:d.vx,vy:d.vy})),
@@ -552,7 +576,8 @@ class World{
       if(o.k===WEED){org.sway=o.sw;org.phase=o.ph;org.len=o.ln;}
       else if(o.k===PLANK){org.drift=o.dr;org.dphase=o.dp;}
       else {org.size=o.sz;org.diet=o.dt;org.speed=o.sp;org.sense=o.se;org.school=o.sc||0;org.reproMass=o.rm;org.maxAge=o.ma;
-        org.brain=o.br?new Float32Array(o.br):randBrain();org.steerBias=0;org._h=new Float32Array(N_HID);org._o=new Float32Array(N_OUT);org._i=new Float32Array(N_IN);}
+        org.brain=o.br?new Float32Array(o.br):randBrain();org.steerBias=0;org._h=new Float32Array(N_HID);org._o=new Float32Array(N_OUT);org._i=new Float32Array(N_IN);
+        org.fitness=o.fi||1; org.feedCount=o.fc||0; org._memory=new Float32Array([o.m0||0,o.m1||0]);}
       return org;
     });
     w.detritus=d.detritus||[]; w.species=d.species||[]; w.history=d.history||[];
@@ -752,7 +777,7 @@ function drawPollenChart(){
   const padL=32,padR=8,padT=16,padB=14, gw=w-padL-padR, gh=h-padT-padB;
   let maxV=1; for(const hh of hist) for(let j=3;j<=5;j++) if(hh[j]>maxV) maxV=hh[j];
   maxV=Math.ceil(maxV/10)*10+10;
-  const colors=['','','','#ffd27a','#ff9a5a','#ff5a6a'], labels=['','','','草食','中魚','頂級'];
+  const colors=['','','','#ffd27a','#ff9a5a','#ff5a6a','#5cf2c4'], labels=['','','','草食','中魚','頂級','適應度'];
   pctx.strokeStyle='rgba(255,255,255,.06)'; pctx.lineWidth=0.5;
   for(let i=0;i<=4;i++){ const y=padT+gh*(1-i/4); pctx.beginPath(); pctx.moveTo(padL,y); pctx.lineTo(w-padR,y); pctx.stroke(); }
   pctx.fillStyle='#3a4a5a'; pctx.font='9px ui-monospace'; pctx.textAlign='right';
@@ -762,8 +787,18 @@ function drawPollenChart(){
     const pts=hist.map((hh,i)=>{const x=padL+(i/(hist.length-1))*gw;const y=padT+gh*(1-hh[j]/maxV);return [x,y];});
     pctx.strokeStyle=colors[j]; pctx.lineWidth=1.5; pctx.beginPath(); pts.forEach(([x,y],i)=>i?pctx.lineTo(x,y):pctx.moveTo(x,y)); pctx.stroke();
   }
+  // 適應度折線（獨立尺度，用青色虛線）
+  let maxFit=1; for(const hh of hist) if(hh[6]>maxFit) maxFit=hh[6];
+  if(maxFit>0.5){
+    const pts=hist.map((hh,i)=>{const x=padL+(i/(hist.length-1))*gw;const y=padT+gh*(1-clamp(hh[6]/maxFit,0,1));return [x,y];});
+    pctx.strokeStyle='#5cf2c4'; pctx.lineWidth=1.2; pctx.setLineDash([3,3]);
+    pctx.beginPath(); pts.forEach(([x,y],i)=>i?pctx.lineTo(x,y):pctx.moveTo(x,y)); pctx.stroke();
+    pctx.setLineDash([]);
+  }
   pctx.font='9px ui-monospace'; pctx.textAlign='left';
   for(let j=3;j<=5;j++){ const lx=padL+10+(j-3)*48; pctx.fillStyle=colors[j]; pctx.fillRect(lx,3,10,8); pctx.fillStyle='#8aa0b8'; pctx.fillText(labels[j],lx+13,11); }
+  pctx.setLineDash([3,3]); pctx.strokeStyle='#5cf2c4'; pctx.lineWidth=1.2; pctx.beginPath(); pctx.moveTo(padL+10+144,7); pctx.lineTo(padL+10+144+10,7); pctx.stroke(); pctx.setLineDash([]);
+  pctx.fillStyle='#8aa0b8'; pctx.fillText('適應度',padL+10+144+13,11);
 }
 let chartOpen=false;
 
@@ -773,6 +808,7 @@ function updateHUD(){ const T=world.totals();
   $('s-weed').textContent=T.weed; $('s-plank').textContent=T.plank;
   $('s-small').textContent=T.small; $('s-mid').textContent=T.mid; $('s-big').textContent=T.big; $('s-gen').textContent=world.gen;
   $('s-school').textContent=T.avgSchool>0?(T.avgSchool*100|0)+'%':'—';
+  $('s-fitness').textContent=T.avgFitness?T.avgFitness.toFixed(1):'—';
   const tot=T.total||1; $('p-diss').style.width=(T.diss/tot*100)+'%'; $('p-bio').style.width=(T.bio/tot*100)+'%'; $('p-det').style.width=(T.det/tot*100)+'%';
   $('s-total').textContent=Math.round(T.total).toLocaleString();
   const rows=[[T.plank,'#7ad0ff'],[T.small,'#ffd27a'],[T.mid,'#ff9a5a'],[T.big,'#ff5a6a']];
@@ -782,7 +818,7 @@ function updateHUD(){ const T=world.totals();
   $('clock').textContent=`${sun>0.6?'☀️':sun>0.25?(frac<0.5?'🌅':'🌇'):'🌙'} ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   if(selected && !selected.dead){ const o=selected;
     const role=o.size<0.28?'🦐 草食':o.size<0.55?'🐟 中魚':'🦈 頂級掠食者';
-    $('inspect').innerHTML=`<b>${role}</b> · 世代 ${o.gen}<br>體型 ${(o.size*100|0)} · 食性 ${(o.diet*100|0)}% 肉食<br>質量 ${o.mass|0}/${o.reproMass|0} · 年齡 ${o.age}/${o.maxAge|0}<br>群游傾向 ${o.school?(o.school*100|0):'?'}% · 速度 ${o.speed?(o.speed*100|0):'?'}`;
+    $('inspect').innerHTML=`<b>${role}</b> · 世代 ${o.gen}<br>體型 ${(o.size*100|0)} · 食性 ${(o.diet*100|0)}% 肉食<br>質量 ${o.mass|0}/${o.reproMass|0} · 年齡 ${o.age}/${o.maxAge|0}<br>群游 ${o.school?(o.school*100|0):'?'}% · 速度 ${o.speed?(o.speed*100|0):'?'}<br>🧠 適應度 ${o.fitness.toFixed(1)} · 進食 ${o.feedCount} 次`;
   } else if(selected && selected.dead){ $('inspect').textContent='⚠️ 該生物已死亡'; selected=null; }
 }
 function pickAt(wx,wy){ let best=null,bd=1e9; for(const o of world.orgs){ if(o.kind!==FAUNA)continue; const d=Math.hypot(o.x-wx,o.y-wy); if(d<Math.max(16,o.r+6)&&d<bd){bd=d;best=o;} } return best; }
