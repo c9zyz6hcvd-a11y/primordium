@@ -512,13 +512,20 @@ class World{
     // 代謝（低 fitness 動物代謝更高 → 淘汰弱者）
     const sp=Math.hypot(o.vx,o.vy);
     const fitPenalty=1+0.06*(1-clamp(o.fitness/8,0,1));
-    const met=(0.025+o.mass*0.0022+sp*0.03)*fitPenalty;
+    const runCost=sp>0.5?sp*0.03:sp*0.01;
+    const met=(0.025+o.mass*0.0022+runCost)*fitPenalty;
     o.mass-=met; this.addDiss(o.x,o.y,met);
     // 吃植物/碎屑 + fitness
     if(canPlants && edT && !edT.dead){ const dx=edT.x-o.x,dy=edT.y-o.y, rr=(myR+(edT.r||3)+3);
       if(dx*dx+dy*dy<rr*rr){
         if(edT.m!==undefined){ const t=Math.min(edT.m,3); edT.m-=t; const gain=t*0.6*(1-o.diet*0.7); o.mass+=gain; this.addDiss(o.x,o.y,t*(1-0.6*(1-o.diet*0.7))); o.fitness+=gain*0.2; o.feedCount++; }
-        else { let take=edT.kind===WEED?Math.min(Math.max(0,edT.mass-7),6):Math.min(edT.mass*0.55,3.5);
+        else {
+          // Type III 功能反應：食物密度→搜尋效率曲線（低密度時效率急降）
+          let localDensity=0,denCount=0;
+          for(const f of foodGrid.near(o.x,o.y)){ if(f.kind===edT.kind&&!f.dead){localDensity+=f.mass;denCount++;} }
+          const densityFactor=clamp(localDensity/(10+denCount*2),0,1);
+          let take=edT.kind===WEED?Math.min(Math.max(0,edT.mass-7),6):edT.mass*densityFactor*0.5;
+          take=Math.min(take,edT.mass*0.55,3.5);
           if(take>0.2){ edT.mass-=take; if(edT.kind!==WEED&&edT.mass<=1.0)edT.dead=true;
             const g=take*0.6*(1-o.diet*0.7); o.mass+=g; o.fitness+=g*0.2; o.feedCount++;
             this.addDetritus(o.x,o.y,(take-g)*0.6); this.addDiss(o.x,o.y,(take-g)*0.4); } } } }
