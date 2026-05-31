@@ -276,6 +276,7 @@ class Org{
     this.vx=0; this.vy=0; this.a=rnd(TAU);
     if(kind===WEED){
       this.hue=opt.hue??rnd(150,110); this.mass=opt.mass??rnd(34,20);
+      this.leaves=opt.leaves??this.mass*0.7;
       this.sway=rnd(0.9,0.4); this.phase=rnd(TAU); this.len=rnd(34,18);
       this.maxAge=opt.maxAge??(4000+rnd(3000));
       this.rootHealth=1;
@@ -441,6 +442,9 @@ class World{
       out[i]=d[i]+D*f; } this.diss.set(out); }
   stepWeed(o,sun,nb){
     o.mass+=this.takeDiss(o.x,o.y,0.6*sun); o.mass-=0.035; this.addDiss(o.x,o.y,0.035);
+    // 葉子再生：mass 增加時優先修復葉子
+    if(o.leaves<o.mass*0.7) o.leaves+=Math.min(0.1,o.mass*0.7-o.leaves);
+    if(o.mass<o.leaves) o.leaves=o.mass;
     // 根系老化：隨年齡衰退
     o.age++; if(o.age>o.maxAge){o.rootHealth-=0.003;}
     if(o.rootHealth<=0){o.dead=true;return;}
@@ -539,7 +543,15 @@ class World{
         if(edT.m!==undefined){ const t=Math.min(edT.m,3); edT.m-=t; const gain=t*0.6*(1-o.diet*0.7); o.mass+=gain; this.addDiss(o.x,o.y,t*(1-0.6*(1-o.diet*0.7))); o.fitness+=gain*0.2; o.feedCount++; }
         else {
           let take;
-          if(edT.kind===WEED) take=myClass<1?Math.min(Math.max(0,edT.mass-2),8):Math.min(Math.max(0,edT.mass-7),5);
+          if(edT.kind===WEED){
+            if(edT.leaves>0.3){
+              take=Math.min(edT.leaves,myClass<1?8:5);
+              edT.leaves-=take; edT.mass-=take;
+            } else if(myClass<1&&edT.mass>1){
+              take=Math.min(edT.mass-0.5,5);
+              edT.mass-=take;
+            } else take=0;
+          }
           else take=Math.min(Math.max(0.3,edT.mass-0.3),6);
           if(take>0.2){ edT.mass-=take; if(edT.kind!==WEED&&edT.mass<=0.05)edT.dead=true;
             const g=take*0.6*(1-o.diet*0.7); o.mass+=g; o.fitness+=g*0.2; o.feedCount++;
@@ -587,7 +599,7 @@ class World{
       tick:this.tick, gen:this.gen, dayLen:this.dayLen, mutRate:this.mutRate, curStr:this.curStr,
       orgs:this.orgs.map(o=>{
         const base={k:o.kind,x:o.x,y:o.y,age:o.age,gen:o.gen,line:o.line,vx:o.vx,vy:o.vy,a:o.a,dead:o.dead,mass:o.mass,hue:o.hue};
-        if(o.kind===WEED){base.sw=o.sway;base.ph=o.phase;base.ln=o.len;base.ma=o.maxAge;base.rh=o.rootHealth;}
+        if(o.kind===WEED){base.sw=o.sway;base.ph=o.phase;base.ln=o.len;base.ma=o.maxAge;base.rh=o.rootHealth;base.lv=o.leaves;}
         else if(o.kind===PLANK){base.dr=o.drift;base.dp=o.dphase;}
         else {base.sz=o.size;base.dt=o.diet;base.sp=o.speed;base.se=o.sense;base.sc=o.school;
           base.rm=o.reproMass;base.ma=o.maxAge;base.br=Array.from(o.brain);
@@ -608,7 +620,7 @@ class World{
     w.orgs=d.orgs.map(o=>{
       const org=new Org(o.k,o.x,o.y,{gen:o.gen,line:o.line});
       org.age=o.age; org.vx=o.vx||0; org.vy=o.vy||0; org.a=o.a||0; org.dead=o.dead||false; org.mass=o.mass; org.hue=o.hue;
-      if(o.k===WEED){org.sway=o.sw;org.phase=o.ph;org.len=o.ln;org.maxAge=o.ma||(4000+rnd(3000));org.rootHealth=o.rh||1;}
+      if(o.k===WEED){org.sway=o.sw;org.phase=o.ph;org.len=o.ln;org.maxAge=o.ma||(4000+rnd(3000));org.rootHealth=o.rh||1;org.leaves=o.lv||org.mass*0.7;}
       else if(o.k===PLANK){org.drift=o.dr;org.dphase=o.dp;}
       else {org.size=o.sz;org.diet=o.dt;org.speed=o.sp;org.sense=o.se;org.school=o.sc||0;org.reproMass=o.rm;org.maxAge=o.ma;
         org.brain=o.br?new Float32Array(o.br):randBrain();org.steerBias=0;org._h=new Float32Array(N_HID);org._o=new Float32Array(N_OUT);org._i=new Float32Array(N_IN);
