@@ -541,9 +541,9 @@ class World{
       if(dx*dx+dy*dy<rr*rr){
         let safe=false;
         if(prey.size<0.3){
-          let weedCount=0, theWeed=null;
-          for(const wd of weedGrid.near(prey.x,prey.y)){ weedCount++; if(!theWeed) theWeed=wd; }
-          if(weedCount>=15){ safe=true; if(Math.random()<0.003&&theWeed){theWeed.mass-=1.5;if(theWeed.mass<=2)theWeed.dead=true;} }
+          let cnt=0, theWeed=null;
+          for(const wd of weedGrid.near(prey.x,prey.y)){ const ex=wd.x-prey.x,ey=wd.y-prey.y; if(ex*ex+ey*ey<80*80){cnt++;if(!theWeed)theWeed=wd;} }
+          if(cnt>=8){ safe=true; if(theWeed&&Math.random()<0.02){theWeed.mass-=3;if(theWeed.mass<=2)theWeed.dead=true;} }
         }
         if(!safe && prey.size>=0.2 && prey.size<0.55){
           const reefIdx=this.nIdx(prey.x,prey.y);
