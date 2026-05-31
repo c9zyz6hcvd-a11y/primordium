@@ -459,7 +459,7 @@ class World{
   stepFauna(o,foodGrid,detGrid,weedGrid,animGrid,schoolGrid,nb){
     if(o.age>o.maxAge){o.dead=true;return;}
     const sense=44+o.sense*150, S=sense;
-    const canPlants=o.diet<0.88, canMeat=o.diet>0.2;
+    const canPlants=o.diet<0.88, canMeat=o.size>0.2;
     const myR=o.r, full=o.mass>o.reproMass*0.95;
     // 魚群行為
     let schoolDX=0, schoolDY=0, schoolCount=0, schoolAlignX=0, schoolAlignY=0;
