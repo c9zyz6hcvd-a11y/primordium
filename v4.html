@@ -661,19 +661,7 @@ class World{
 }
 let world=new World();
 
-// ── 水深與地形渲染 ──────────────────────────────────────────────────────
-// 預計算水深色調色盤
-function buildDepthPalette(n){
-  const p=[];
-  for(let i=0;i<=n;i++){
-    const u=i/n;
-    // 淺（0）：清澈藍綠 → 中：深藍 → 深（1）：近乎黑
-    const r=Math.round(lerp(12,2,u)), g=Math.round(lerp(38,6,u)), b=Math.round(lerp(80,16,u));
-    p.push([r,g,b]);
-  }
-  return p;
-}
-const DEPTH_PALETTE=buildDepthPalette(20);
+// ── 水深與地形（在繪圖中直接處理色調） ──
 
 // ── 繪圖 ────────────────────────────────────────────────────────────────
 let selected=null;
@@ -686,44 +674,35 @@ function draw(){
   const m=70/cam.zoom, vx0=cam.x-(CW/2)/cam.zoom-m, vx1=cam.x+(CW/2)/cam.zoom+m;
   const vy0=cam.y-(CH/2)/cam.zoom-m, vy1=cam.y+(CH/2)/cam.zoom+m;
 
-  // ── 水深背景：根據地形繪製海底漸層 ──
+  // ── 基本海底漸層（與 v3 相同，保證生物可見） ──
+  const fg=ctx.createLinearGradient(0,0,0,H);
+  fg.addColorStop(0,`rgb(${bg[0]},${bg[1]},${bg[2]})`);
+  fg.addColorStop(1,'rgb(2,4,10)');
+  ctx.fillStyle=fg; ctx.fillRect(0,0,W,H);
+
+  // ── 水深微調：在底色上疊加非常淡的地形色塊 ──
   const {terrain}=world;
-  const drawDepth=50; // 解析度
-  for(let y=Math.max(0,(vy0/drawDepth)|0);y<=Math.min(H/drawDepth,(vy1/drawDepth)|0);y++){
-    for(let x=Math.max(0,(vx0/drawDepth)|0);x<=Math.min(W/drawDepth,(vx1/drawDepth)|0);x++){
-      const wx=x*drawDepth, wy=y*drawDepth;
+  for(let y=Math.max(0,(vy0/60)|0);y<=Math.min(H/60,(vy1/60)|0);y++){
+    for(let x=Math.max(0,(vx0/60)|0);x<=Math.min(W/60,(vx1/60)|0);x++){
+      const wx=x*60, wy=y*60;
       const dep=depthAt(terrain,wx,wy);
-      const di=clamp((dep*DEPTH_PALETTE.length)|0,0,DEPTH_PALETTE.length-1);
-      const [r,g,b]=DEPTH_PALETTE[di];
-      // 表面附近混入天空色
-      const surfaceMix=Math.max(0,1-dep*3)*0.3;
-      const rr=Math.round(lerp(r,bg[0],surfaceMix));
-      const gg=Math.round(lerp(g,bg[1],surfaceMix));
-      const bb=Math.round(lerp(b,bg[2],surfaceMix));
-      ctx.fillStyle=`rgb(${rr},${gg},${bb})`;
-      ctx.fillRect(wx,wy,drawDepth+1,drawDepth+1);
+      // 淺水（dep < 0.3）加一點透光青綠，深水加一點墨藍
+      const tint=dep<0.3?`rgba(80,180,220,${(0.3-dep)*0.08})`:
+                 dep>0.7?`rgba(0,10,30,${(dep-0.7)*0.12})`:'rgba(0,0,0,0)';
+      if(tint!=='rgba(0,0,0,0)'){ctx.fillStyle=tint;ctx.fillRect(wx,wy,61,61);}
     }
   }
-  // 海底輪廓線（等深線效果）
-  ctx.strokeStyle='rgba(255,255,255,.03)'; ctx.lineWidth=0.5/cam.zoom;
+  // 等深線（極淡，僅靠近看才有）
+  ctx.strokeStyle='rgba(255,255,255,.02)'; ctx.lineWidth=0.5/cam.zoom;
   for(let y=Math.max(0,(vy0/80)|0);y<=Math.min(H/80,(vy1/80)|0);y++){
     for(let x=Math.max(0,(vx0/80)|0);x<=Math.min(W/80,(vx1/80)|0);x++){
-      const wx=x*80, wy=y*80;
-      const d1=depthAt(terrain,wx,wy);
-      const d2=depthAt(terrain,wx+80,wy);
-      const d3=depthAt(terrain,wx,wy+80);
-      ctx.strokeStyle=`rgba(255,255,255,${clamp(Math.abs(d1-d2)*0.6,0,0.08)})`;
-      ctx.beginPath();ctx.moveTo(wx,wy);ctx.lineTo(wx+80,wy);ctx.stroke();
-      ctx.strokeStyle=`rgba(255,255,255,${clamp(Math.abs(d1-d3)*0.6,0,0.08)})`;
-      ctx.beginPath();ctx.moveTo(wx,wy);ctx.lineTo(wx,wy+80);ctx.stroke();
+      const d1=depthAt(terrain,x*80,y*80);
+      const d2=depthAt(terrain,x*80+80,y*80);
+      if(Math.abs(d1-d2)>0.15){ctx.beginPath();ctx.moveTo(x*80,y*80);ctx.lineTo(x*80+80,y*80);ctx.stroke();}
+      const d3=depthAt(terrain,x*80,y*80+80);
+      if(Math.abs(d1-d3)>0.15){ctx.beginPath();ctx.moveTo(x*80,y*80);ctx.lineTo(x*80,y*80+80);ctx.stroke();}
     }
   }
-
-  // 深海漸層疊加（越深越暗）
-  const depGrad=ctx.createLinearGradient(0,0,0,H);
-  depGrad.addColorStop(0,'rgba(0,0,0,0)');
-  depGrad.addColorStop(1,'rgba(0,4,12,.35)');
-  ctx.fillStyle=depGrad; ctx.fillRect(0,0,W,H);
 
   // 水面光線
   const tt=performance.now()*0.001;
