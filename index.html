@@ -292,9 +292,13 @@ class Org{
     I[9]= clamp(world.sensePhero(this.x,this.y),0,1); // chemical signal
 
     think(this.g.brain,I,this._hid,this._out);
-    const turn=this._out[0]*0.34;
-    const thrust=(this._out[1]*0.5+0.5)*this.maxThrust;
+    // High-pass steering: a constant turn signal is cancelled (no endless spinning),
+    // but sudden changes — reacting to food/threats — still steer. Purposeful swimming.
+    const raw=this._out[0];
+    this.steerBias=(this.steerBias||0)*0.96 + raw*0.04;  // slow-moving baseline
+    const turn=(raw - this.steerBias)*0.28;              // only the reactive part turns you
     this.a+=turn;
+    const thrust=(this._out[1]*0.5+0.5)*this.maxThrust;
     this.vx+=Math.cos(this.a)*thrust;
     this.vy+=Math.sin(this.a)*thrust;
     this.vx*=0.9; this.vy*=0.9;
