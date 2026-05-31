@@ -294,8 +294,8 @@ class Org{
       this._memory=new Float32Array([0,0]); // 記憶細胞（跨回合 RNN）
     }
   }
-  get r(){ if(this.kind===WEED) return 3+this.mass*0.16; if(this.kind===PLANK) return 1.6+this.mass*0.25;
-    return 3+this.size*18+clamp(this.mass/this.reproMass,0,1)*4; }
+  get r(){ if(this.kind===WEED) return 3+this.mass*0.16; if(this.kind===PLANK) return 1.2+this.mass*0.15;
+    return 2+this.size*4+this.size*this.size*24+clamp(this.mass/this.reproMass,0,1)*2; }
 }
 
 // ── 世界 ──
